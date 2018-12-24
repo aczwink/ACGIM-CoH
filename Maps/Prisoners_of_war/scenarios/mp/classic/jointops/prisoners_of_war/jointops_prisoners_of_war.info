@@ -1,0 +1,19 @@
+HeaderInfo =  
+{
+	scenarioname = "$18010018",
+	scenariodescription = "$18010019",
+	maxplayers = 6,
+	date = "29.3.2009 16:02	",
+	scenarioabbrname = "",
+	savedname = "",
+	version = 2003,
+	mapsize =  
+	{
+		256,
+		512,
+	},
+	music = "",
+	scenariotype = 2,
+	modname = "JointOps",
+}
+

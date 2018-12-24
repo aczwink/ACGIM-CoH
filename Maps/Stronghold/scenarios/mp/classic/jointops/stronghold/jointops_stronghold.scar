@@ -1,0 +1,2511 @@
+import("jointops.scar")
+
+EVENTS = {}
+
+EVENTS.VEHICLE = function()
+	CTRL.Actor_PlaySpeech(ACTOR.Carota, 222100) -- Vehicles approaching!
+	CTRL.WAIT()
+end
+
+EVENTS.BRIDGES_SECURED = function()
+	CTRL.Actor_PlaySpeech(ACTOR.Conti, 360180)	--We've secured all the bridges. The krauts are cut off.
+	CTRL.WAIT()
+end
+
+EVENTS.COUNTERATTACK = function()
+	CTRL.Actor_PlaySpeech(ACTOR.GenericAlly, 230490)
+	CTRL.WAIT()
+end
+
+EVENTS.FLAK = function()
+	CTRL.Actor_PlaySpeech(ACTOR.McKay, 211300) -- That does it!  88 battery destroyed.
+	CTRL.WAIT()
+end
+
+EVENTS.COMPLETE = function()
+	CTRL.Actor_PlaySpeech(ACTOR.McKay, 211310) -- Excellent job men.
+	CTRL.WAIT()
+end
+
+EVENTS.GO = function()
+	CTRL.Actor_PlaySpeech(ACTOR.Carota, 220230) -- Let's move out.
+	CTRL.WAIT()
+end
+
+EVENTS.ONEKILLED = function()
+	CTRL.Actor_PlaySpeech(ACTOR.Carota, 220240) -- That?s one less to worry about.
+	CTRL.WAIT()
+end
+
+EVENTS.AADEAD = function()
+	CTRL.Actor_PlaySpeech(ACTOR.Thompson, 222290) -- All Anti-Aircraft Guns destroyed! Good work, guys - I?m sure the rest of the paras will appreciate that.
+	CTRL.WAIT()
+end
+
+EVENTS.BRIDGES = function()
+	CTRL.Actor_PlaySpeech(ACTOR.Thompson, 240460) --   Make sure the Krauts DO NOT cross the bridges!
+	CTRL.WAIT()
+end
+
+function OnGameSetup()
+	g_CheckAnnihilate = false
+	
+	-- Players
+	player1 = World_GetPlayerAt(1)
+	player2 = World_GetPlayerAt(2)
+	Setup_SetPlayerRace(player1, 1)
+	Setup_SetPlayerRace(player2, 1)
+	
+	-- AI
+	AXIS = World_GetPlayerAt(4)
+	ALLIES = World_GetPlayerAt(3)
+	Setup_SetPlayerTeam(ALLIES, 0)
+	Setup_SetPlayerRace(ALLIES, 1)
+end
+
+function OnInit()
+	if not JointOps_Init("allies", 4) then return end
+	
+	-- check if skirmish or multi
+	local _ai_count = 0
+	for i = 1, World_GetPlayerCount() do
+		if Player_IsHuman(World_GetPlayerAt(i)) then
+			_ai_count = _ai_count + 1
+		end
+	end
+	if _ai_count == 1 then
+		MULTIPLAYER = false
+	else
+		MULTIPLAYER = true
+	end
+	
+	if not MULTIPLAYER then
+		aiplayer = player2
+		if Player_IsHuman(player2) then aiplayer = player1 end
+		-- Player_GetAll(aiplayer)
+		-- SGroup_DestroyAllSquads(sg_allsquads)
+	end
+	
+	-- AI_Enable(AXIS, false)
+	-- AI_Enable(ALLIES, false)
+	AI_EnableAll(false)
+	
+	-- Axis Setup
+	Player_SetPopCapOverride(AXIS, 500)
+	Player_SetResource(AXIS, RT_Manpower, 10000)
+	Player_SetResource(AXIS, RT_Munition, 10000)
+	Player_SetResource(AXIS, RT_Fuel, 10000)
+	Modify_EntityBuildTime(AXIS, EBP.AXIS.SANDBAG, 300)
+	
+	-- Allies Setup	
+	if MULTIPLAYER then
+		Modify_PlayerResourceRate(player1, RT_Manpower, 1.4)
+		Modify_PlayerResourceRate(player1, RT_Munition, 1)
+		Modify_PlayerResourceRate(player1, RT_Fuel, 0)
+		
+		Modify_PlayerResourceRate(player2, RT_Manpower, 1.4)
+		Modify_PlayerResourceRate(player2, RT_Munition, 1)
+		Modify_PlayerResourceRate(player2, RT_Fuel, 0)
+	else
+		Modify_PlayerResourceRate(player1, RT_Manpower, 1.8)
+		Modify_PlayerResourceRate(player1, RT_Munition, 1.5)
+		Modify_PlayerResourceRate(player1, RT_Fuel, 0)
+		
+		Modify_PlayerResourceRate(player2, RT_Manpower, 1.5)
+		Modify_PlayerResourceRate(player2, RT_Munition, 1)
+		Modify_PlayerResourceRate(player2, RT_Fuel, 0)
+	end
+	
+	if MULTIPLAYER then
+		Player_SetResource(player1, RT_Manpower, 300)
+		Player_SetResource(player1, RT_Munition, 50)
+		Player_SetResource(player1, RT_Fuel, 0)
+		
+		Player_SetResource(player2, RT_Manpower, 300)
+		Player_SetResource(player2, RT_Munition, 50)
+		Player_SetResource(player2, RT_Fuel, 0)
+	else
+		Player_SetResource(player1, RT_Manpower, 750)
+		Player_SetResource(player1, RT_Munition, 100)
+		Player_SetResource(player1, RT_Fuel, 0)
+		
+		Player_SetResource(player2, RT_Manpower, 750)
+		Player_SetResource(player2, RT_Munition, 100)
+		Player_SetResource(player2, RT_Fuel, 0)
+	end
+	
+	EGroup_InstantCaptureStrategicPoint(eg_fuel, AXIS)
+	EGroup_InstantCaptureStrategicPoint(eg_muni, AXIS)
+	EGroup_InstantCaptureStrategicPoint(eg_north_control, AXIS)
+	EGroup_InstantCaptureStrategicPoint(eg_south_control, AXIS)
+	EGroup_InstantCaptureStrategicPoint(eg_strat_north, AXIS)
+	EGroup_InstantCaptureStrategicPoint(eg_strat_south, AXIS)
+	EGroup_InstantCaptureStrategicPoint(eg_bridge_strat1, AXIS)
+	EGroup_InstantCaptureStrategicPoint(eg_bridge_strat2, AXIS)
+	
+	EGroup_SetPlayerOwner(eg_axis_fhq1, AXIS)
+	EGroup_SetPlayerOwner(eg_axis_fhq2, AXIS)
+	EGroup_SetPlayerOwner(eg_axis_fhq3, AXIS)
+	EGroup_SetPlayerOwner(eg_axis_fhq4, AXIS)
+	EGroup_SetPlayerOwner(axis_main_base, AXIS)
+	
+	Modify_Vulnerability(axis_main_base, 0.1)
+	
+	Cmd_InstantUpgrade(eg_axis_fhq1, UPG.ELITE.CONVERT_AMBIENT_BUILDING)
+	Cmd_InstantUpgrade(eg_axis_fhq2, UPG.ELITE.CONVERT_AMBIENT_BUILDING)
+	Cmd_InstantUpgrade(eg_axis_fhq3, UPG.ELITE.CONVERT_AMBIENT_BUILDING)
+	Cmd_InstantUpgrade(eg_axis_fhq4, UPG.ELITE.CONVERT_AMBIENT_BUILDING)
+	Cmd_InstantUpgrade(axis_main_base, UPG.ELITE.CONVERT_AMBIENT_BUILDING)
+	
+	Player_SetUpgradeAvailability(player1, UPG.ALLIES.CONVERT_AMBIENT_BUILDING, ITEM_REMOVED)
+	Player_SetUpgradeAvailability(player2, UPG.ALLIES.CONVERT_AMBIENT_BUILDING, ITEM_REMOVED)
+	
+	Player_SetUpgradeAvailability(player1, UPG.COMMANDER_TREE.ALLIES.AIRBORNE_10, ITEM_LOCKED)
+	Player_SetUpgradeAvailability(player2, UPG.COMMANDER_TREE.ALLIES.AIRBORNE_10, ITEM_LOCKED)
+	
+	Player_SetSquadProductionAvailability(player1, SBP.ALLIES.ENGINEER, ITEM_LOCKED)
+	Player_SetSquadProductionAvailability(player2, SBP.ALLIES.ENGINEER, ITEM_LOCKED)
+	
+	-- disable 0xp popup
+	UI_EnableResourceTypeKicker(RT_Action, false)
+	
+	-- disable action points
+	Player_StopEarningActionPoints(player1)
+	Player_StopEarningActionPoints(player2)
+	
+	Player_SetAbilityAvailability(player1, ABILITY.ALLIES.FIREUP, ITEM_UNLOCKED)
+	Player_SetAbilityAvailability(player2, ABILITY.ALLIES.FIREUP, ITEM_UNLOCKED)
+	
+	Player_SetAbilityAvailability(player1, ABILITY.ALLIES.GRENADE, ITEM_UNLOCKED)
+	Player_SetAbilityAvailability(player2, ABILITY.ALLIES.GRENADE, ITEM_UNLOCKED)
+	
+	Player_SetAbilityAvailability(player1, ABILITY.ALLIES.STICKY_BOMB, ITEM_UNLOCKED)
+	Player_SetAbilityAvailability(player2, ABILITY.ALLIES.STICKY_BOMB, ITEM_UNLOCKED)
+	
+	Player_SetAbilityAvailability(player1, ABILITY.ALLIES.BAR_SUPRESSION, ITEM_UNLOCKED)
+	Player_SetAbilityAvailability(player2, ABILITY.ALLIES.BAR_SUPRESSION, ITEM_UNLOCKED)
+	
+	-- give bar by default
+	Cmd_Upgrade(player1, UPG.ALLIES.BAR, 1, true)
+	Cmd_Upgrade(player2, UPG.ALLIES.BAR, 1, true)
+	
+	Player_SetEntityProductionAvailability(player1, EBP.ALLIES.BARRACKS, ITEM_REMOVED)
+	Player_SetEntityProductionAvailability(player1, EBP.ALLIES.ARMORY, ITEM_REMOVED)
+	Player_SetEntityProductionAvailability(player1, EBP.ALLIES.MOTORPOOL, ITEM_REMOVED)
+	Player_SetEntityProductionAvailability(player1, EBP.ALLIES.TANK_DEPOT, ITEM_REMOVED)
+	Player_SetEntityProductionAvailability(player1, EBP.ALLIES.QUARTER_MASTER, ITEM_REMOVED)
+	Player_SetEntityProductionAvailability(player1, EBP.ALLIES.TRIAGE, ITEM_REMOVED)
+	
+	Player_SetEntityProductionAvailability(player2, EBP.ALLIES.BARRACKS, ITEM_REMOVED)
+	Player_SetEntityProductionAvailability(player2, EBP.ALLIES.ARMORY, ITEM_REMOVED)
+	Player_SetEntityProductionAvailability(player2, EBP.ALLIES.MOTORPOOL, ITEM_REMOVED)
+	Player_SetEntityProductionAvailability(player2, EBP.ALLIES.TANK_DEPOT, ITEM_REMOVED)
+	Player_SetEntityProductionAvailability(player2, EBP.ALLIES.QUARTER_MASTER, ITEM_REMOVED)
+	Player_SetEntityProductionAvailability(player2, EBP.ALLIES.TRIAGE, ITEM_REMOVED)
+	
+	-- Modify_EntityBuildTime(player1, EBP.ALLIES.BARBED_WIRE, 3)
+	-- Modify_EntityBuildTime(player1, EBP.ALLIES.SANDBAG, 2)
+	Player_SetEntityProductionAvailability(player1, EBP.ALLIES.TANK_TRAP, ITEM_REMOVED)
+	Player_SetEntityProductionAvailability(player1, EBP.ALLIES.TANK_TRAP_RIFLEMEN, ITEM_REMOVED)
+	
+	-- Modify_EntityBuildTime(player2, EBP.ALLIES.BARBED_WIRE, 2)
+	-- Modify_EntityBuildTime(player2, EBP.ALLIES.SANDBAG, 2)
+	Player_SetEntityProductionAvailability(player2, EBP.ALLIES.TANK_TRAP, ITEM_REMOVED)
+	Player_SetEntityProductionAvailability(player2, EBP.ALLIES.TANK_TRAP_RIFLEMEN, ITEM_REMOVED)
+	
+	LOCSTRINGS =
+	{
+		INTRO = "Axis forces have setup a stronghold in this town",
+		INTRO2 = "Allied forces will start an assault in a few hours",
+		INTRO3 = "Your first task will be to secure the bridges leading to the area. Here ...",
+		INTRO4 = "... and here.",
+		BRIDGES_TITLE = "Secure the bridges",
+		BRIDGES_STARTMSG = "Get some paratroopers in the field and secure the bridges",
+		WEAPONS = "HQ has sent us some additional weapons",
+		HT_DROP = "HQ has sent us some reinforcements",
+		FHQ_TITLE = "Break the first axis defensive line",
+		FHQ_STARTMSG = "First we should attack these buildings, Axis forces are coordinating their outer defenses from here",
+		MAIN_TITLE = "Defend the bridges / clear the town center",
+		MAIN_STARTMSG = "Support our allies on their advance and defend the bridges",
+		AA_TITLE = "Destroy the AA guns",
+		AA_STARTMSG = "Axis AA guns prevent our airforce from attacking",
+		ARTI_TITLE = "Kill the artillery spotters",
+		ARTI_STARTMSG = "Axis artillery spotters sighted",
+		SUPPLY = "Supply drop",
+		GLIDER_TITLE = "Capture the gliders",
+		GLIDER_STARTMSG = "Bring a squad near a plane to capture it",
+		FUELBASE_TITLE = "Eliminate the fuel base",
+		FUELBASE_STARTMSG = "Capture or destroy the fuel base",
+		FLAK_TITLE = "Destroy the flaks",
+		FLAK_STARTMSG = "There are still some flaks preventing our bombers from attacking",
+		TANK = "HQ has sent us tank support",
+		LOSE = "Both bridges are lost ... Mission failed",
+		WIN = "Congratulations commander, Axis forces are retreating from the area"
+	}
+	for key, value in pairs(LOCSTRINGS) do LOCSTRINGS[key] = JointOps_Util_CreateLocString(value) end
+	
+	SOUNDS =
+	{
+		RADIOMSG = "speech/mp/axis/bld/orderconfirmations/select/xl_bld_sel_obpge0_nt_s",
+		SUPPLY = "flyby",
+		ATTACK = "speech/mp/axis/gan/intel/playerability/xb_gan_apl_rougen_nt_s",
+		ARMOR = "speech/mp/commonwealth/int/intel/enemyinsector/cb_int_ems_armgen_nt_l",
+		REINFORCEMENTS = "speech/mp/axis/gan/intel/reinforceissued/xb_gan_rei_dontuse_nt_s",
+		ALARM = "SpecialFX/alarm_02",
+		LOSE = "speech/mp/allies/int/intel/victorystatus/lb_int_vit_frnrst_nt_l",
+		WIN = "speech/mp/allies/int/intel/victorystatus/lx_int_vit_enmrst_nt_l",
+		ARRIVE = "sound/speech/mp/allies/gs1/events/enemysighted/lb_gs1_ens_inge00_lt_l",
+		ADVANCING = "sound/speech/mp/allies/gs1/events/enemysighted/lb_gs1_ens_inge00_lt_m",
+		BACKGROUNDFIGHT = "ambiences/ambiences_streamed/cxp2/sp/plane_raid_distant"
+	}
+	for key, value in pairs(SOUNDS) do Sound_PreCacheSound(value) end
+	
+	ABILITY_SINGLEARTY = BP_GetAbilityBlueprint("abilities/sp/sp_gen_single_off_map_artillery_strike.lua")
+	
+	status_intro = 1
+	status_intro_main = 1
+	status_intro_aa = 1
+	status_intro_gliders = 1
+	status_intro_arti = 1
+	status_outro = 1
+	bridge1_taken = false
+	bridge2_taken = false
+	FHQ1 = 0
+	FHQ2 = 0
+	FHQ3 = 0
+	main_base_captured = false
+	ht_drop_count = 0
+	check1 = 0
+	check2 = 0
+	check3 = 0
+	check4 = 0
+	arti_intro_running = false
+	gliders_intro_running = false
+	x = 0
+	y = 75
+	rotator = 1
+	panzer = 0
+	
+	Entity_SetAnimatorVariable(EGroup_GetSpawnedEntityAt(eg_spot1, 1), "Hinge", -0.1)
+	Entity_SetAnimatorVariable(EGroup_GetSpawnedEntityAt(eg_spot2, 1), "Hinge", 0.1)
+	Entity_SetAnimatorVariable(EGroup_GetSpawnedEntityAt(eg_spot3, 1), "Hinge", 0.5)
+	Entity_SetAnimatorVariable(EGroup_GetSpawnedEntityAt(eg_spot4, 1), "Hinge", 0.6)
+	
+	ht_drop_troops = {SBP.ALLIES.RIFLEMEN, SBP.ALLIES.RANGER}
+	ht_drop_support = {SBP.ALLIES.HEAVYMG}
+	
+	ambient_squads = {SBP.ALLIES.RIFLEMEN, SBP.ALLIES.RIFLEMEN, SBP.ALLIES.RANGER, SBP.CW.COMMANDOS, SBP.CW.TOMMIES, SBP.ALLIES.JEEP, SBP.CW.TOMMIES_CANADIAN_SP, SBP.CW.SAPPER}
+	types_attack = {SBP.AXIS.GRENADIER, SBP.AXIS.VOLKSGRENADIER, SBP.AXIS.KNIGHTSCROSS, SBP.AXIS.STORMTROOPER}
+	types_tank = {SBP.ALLIES.M10, SBP.ALLIES.SHERMAN, SBP.CW.CROMWELL}
+	
+	SQUADS_AMB_INF = {}
+	setmetatable(SQUADS_AMB_INF, {__index = function(t, k) t[k] = {} return t[k] end})
+	SG_INFANTRY_INFO = {}
+	setmetatable(SG_INFANTRY_INFO, {__index = function(t, k) t[k] = {} return t[k] end})
+	
+	ari_target1 = SGroup_CreateIfNotFound("ari_target1")
+	ari_target2 = SGroup_CreateIfNotFound("ari_target2")
+	ari_target3 = SGroup_CreateIfNotFound("ari_target3")
+	ari_target4 = SGroup_CreateIfNotFound("ari_target4")
+	ari_target5 = SGroup_CreateIfNotFound("ari_target5")
+	ari_target6 = SGroup_CreateIfNotFound("ari_target6")
+	
+	sg_glider_assign1 = SGroup_CreateIfNotFound("sg_glider_assign1")
+	sg_glider_assign2 = SGroup_CreateIfNotFound("sg_glider_assign2")
+	sg_glider_assign3 = SGroup_CreateIfNotFound("sg_glider_assign3")
+	sg_glider_assign4 = SGroup_CreateIfNotFound("sg_glider_assign4")
+	sg_glider_assign5 = SGroup_CreateIfNotFound("sg_glider_assign5")
+	sg_glider_assign6 = SGroup_CreateIfNotFound("sg_glider_assign6")
+	
+	sg_backup1 = SGroup_CreateIfNotFound("sg_backup1")
+	sg_backup2 = SGroup_CreateIfNotFound("sg_backup2")
+	sg_backup3 = SGroup_CreateIfNotFound("sg_backup3")
+	
+	eg_glider1 = EGroup_CreateIfNotFound("eg_glider1")
+	eg_glider2 = EGroup_CreateIfNotFound("eg_glider2")
+	eg_glider3 = EGroup_CreateIfNotFound("eg_glider3")
+	
+	sg_hummel1 = SGroup_CreateIfNotFound("sg_hummel1")
+	sg_hummel2 = SGroup_CreateIfNotFound("sg_hummel2")
+	sg_nebel1 = SGroup_CreateIfNotFound("sg_nebel1")
+	sg_nebel2 = SGroup_CreateIfNotFound("sg_nebel2")
+	
+	hummel1_target1 = SGroup_CreateIfNotFound("hummel1_target1")
+	hummel1_target2 = SGroup_CreateIfNotFound("hummel1_target2")
+	hummel1_target3 = SGroup_CreateIfNotFound("hummel1_target3")
+	hummel2_target1 = SGroup_CreateIfNotFound("hummel2_target1")
+	hummel2_target2 = SGroup_CreateIfNotFound("hummel2_target2")
+	hummel2_target3 = SGroup_CreateIfNotFound("hummel2_target3")
+	nebel1_target1 = SGroup_CreateIfNotFound("nebel1_target1")
+	nebel1_target2 = SGroup_CreateIfNotFound("nebel1_target2")
+	nebel1_target3 = SGroup_CreateIfNotFound("nebel1_target3")
+	nebel2_target1 = SGroup_CreateIfNotFound("nebel2_target1")
+	nebel2_target2 = SGroup_CreateIfNotFound("nebel2_target2")
+	nebel2_target3 = SGroup_CreateIfNotFound("nebel2_target3")
+	
+	sg_goliath = SGroup_CreateIfNotFound("sg_goliath")
+	
+	sg_allies_tank1 = SGroup_CreateIfNotFound("sg_allies_tank1")
+	sg_allies_tank2 = SGroup_CreateIfNotFound("sg_allies_tank2")
+	
+	plr1 = Player_GetDisplayName(player1)
+	plr2 = Player_GetDisplayName(player2)
+	
+	intro()
+end
+
+Scar_AddInit(OnInit)
+
+function Start_Flares()
+	EGroup_SetAnimatorEvent(eg_flares1, "flare_fire_00")
+	EGroup_SetAnimatorEvent(eg_flares2, "flare_fire_00")
+end
+
+function intro()
+	if status_intro == 1 then
+		FOW_RevealAll()
+		Rule_AddInterval(intro, 1)
+		Game_Letterbox(true, 0)
+		Game_FadeToBlack(true, 0)
+		Sound_Play2D(SOUNDS.ALARM)
+		Rule_AddInterval(searchlights, 0.1)
+	elseif status_intro ==  2 then
+		Sound_PlayMusic("music/sp/m10/m10_ob1_taketown.bsc", 0, 0)
+		sg_intro1 = SGroup_CreateIfNotFound("sg_intro1")
+		Util_CreateSquadsAtMarker(AXIS, sg_intro1, SBP.AXIS.OFFICER, intro4, 1)
+		SGroup_SetMoodMode(sg_intro1, MM_ForceCalm)
+		sg_intro2 = SGroup_CreateIfNotFound("sg_intro2")
+		Util_CreateSquadsAtMarker(AXIS, sg_intro2, SBP.ELITE.TANKBUSTERS, intro2, 1)
+		SGroup_SetMoodMode(sg_intro2, MM_ForceCalm)
+		Cmd_Move(sg_intro2, intro3, false)
+		sg_intro3 = SGroup_CreateIfNotFound("sg_intro3")
+		Util_CreateSquadsAtMarker(AXIS, sg_intro3, SBP.ELITE.FALLSCHIRMJAGER, intro5, 1)
+		SGroup_SetMoodMode(sg_intro3, MM_ForceCalm)
+		Cmd_Move(sg_intro3, intro8, false)
+		sg_intro4 = SGroup_CreateIfNotFound("sg_intro4")
+		Util_CreateSquadsAtMarker(AXIS, sg_intro4, SBP.AXIS.KNIGHTSCROSS, intro6, 1)
+		SGroup_SetMoodMode(sg_intro4, MM_ForceCalm)
+		Cmd_Move(sg_intro4, intro2, false)
+		sg_intro5 = SGroup_CreateIfNotFound("sg_intro5")
+		Util_CreateSquadsAtMarker(AXIS, sg_intro5, SBP.ELITE.ARMOURCAR_221, intro11, 1)
+		Modify_UnitSpeed(sg_intro5, 0.5)
+		Cmd_Move(sg_intro5, intro2, false)
+	elseif status_intro == 3 then
+		Game_Letterbox(true, 0)
+		Game_FadeToBlack(FADE_IN, 0.5)
+		Camera_ResetToDefault()
+		Camera_MoveToPosition(intro_cam, false)
+		Camera_SetOrbit(5)
+		Camera_SetDeclination(0.6)
+		Camera_SetZoomDist(150)
+	elseif status_intro == 5 then
+		JointOps_Util_GlobalMessage(LOCSTRINGS.INTRO, 3)
+		Camera_MoveToPosition(intro_cam1, true, 0.02)
+	elseif status_intro == 10 then
+		JointOps_Util_GlobalMessage(LOCSTRINGS.INTRO2, 3)
+	elseif status_intro == 14 then
+		Cmd_InstantUpgrade(player1, UPG.COMMANDER_TREE.ALLIES.AIRBORNE)
+		Cmd_InstantUpgrade(player2, UPG.COMMANDER_TREE.ALLIES.AIRBORNE)
+		Game_FadeToBlack(true, 0.5)
+		sg_intro6 = SGroup_CreateIfNotFound("sg_intro6")
+		Util_CreateSquadsAtMarker(AXIS, sg_intro6, SBP.ELITE.PANZERGRENADIER, intro12, 1)
+		SGroup_SetMoodMode(sg_intro6, MM_ForceCalm)
+		Cmd_Move(sg_intro6, intro13, false)
+	elseif status_intro == 15 then
+		Game_FadeToBlack(FADE_IN, 0.5)
+		Camera_AutoRotate(Util_GetPosition(eg_bridge1), 40, 45, 1)
+	elseif status_intro == 16 then
+		JointOps_Util_GlobalMessage(LOCSTRINGS.INTRO3, 3)
+		Sound_Play2D(SOUNDS.ADVANCING)
+	elseif status_intro == 20 then
+		Game_FadeToBlack(true, 0.5)
+		sg_intro7 = SGroup_CreateIfNotFound("sg_intro7")
+		Util_CreateSquadsAtMarker(AXIS, sg_intro7, SBP.ELITE.ARMOURCAR_221, intro14, 1)
+		SGroup_SetMoodMode(sg_intro7, MM_ForceCalm)
+		Cmd_Move(sg_intro7, intro15, false)
+	elseif status_intro == 21 then
+		Game_FadeToBlack(FADE_IN, 0.5)
+		Camera_AutoRotate(Util_GetPosition(eg_bridge2), 40, 45, 1)
+	elseif status_intro == 22 then
+		JointOps_Util_GlobalMessage(LOCSTRINGS.INTRO4, 3)
+		Sound_Play2D(SOUNDS.ARRIVE)
+	elseif status_intro == 26 then
+		Game_FadeToBlack(true, 2)
+	elseif status_intro == 28 then
+		Camera_StopAutoRotating()
+		FOW_UnRevealAll()
+		Sound_StopMusic(2, 0)
+		Sound_SetVolume("Music", 0.5, 0)
+		Sound_PlayMusic("music/longroad_to_mortar.bsc", 0, 0)
+		Game_Letterbox(false, 1)
+		Game_FadeToBlack(FADE_IN, 2)
+		Camera_ResetToDefault()
+		Camera_MoveToPosition(fow1, false)
+		SGroup_DestroyAllSquads(sg_intro1)
+		SGroup_Clear(sg_intro1)
+		SGroup_DestroyAllSquads(sg_intro2)
+		SGroup_Clear(sg_intro2)
+		SGroup_DestroyAllSquads(sg_intro3)
+		SGroup_Clear(sg_intro3)
+		SGroup_DestroyAllSquads(sg_intro4)
+		SGroup_Clear(sg_intro4)
+		SGroup_DestroyAllSquads(sg_intro5)
+		SGroup_Clear(sg_intro5)
+		SGroup_DestroyAllSquads(sg_intro6)
+		SGroup_Clear(sg_intro6)
+		SGroup_DestroyAllSquads(sg_intro7)
+		SGroup_Clear(sg_intro7)
+	elseif status_intro == 29 then
+		Camera_MoveToPosition(fow1, false)
+		FOW_RevealMarker(Marker_FromName("fow1", "green_marker"), -1)
+		Rule_AddOneShot(start, 2)
+		Rule_RemoveMe()
+	end
+	
+	status_intro = status_intro + 1
+end
+
+function intro_main()
+	if status_intro_main == 1 then
+		Rule_AddInterval(intro_main, 1)
+		Sound_PlayStreamed(SOUNDS.BACKGROUNDFIGHT)
+		Game_Letterbox(true, 0)
+		Game_FadeToBlack(true, 2)
+		Sound_StopMusic(2, 0)
+	elseif status_intro_main == 3 then
+		EGroup_Kill(eg_spot1)
+		EGroup_Kill(eg_spot2)
+		EGroup_Kill(eg_spot3)
+		EGroup_Kill(eg_spot4)
+		Sound_PlayMusic("music/sp/m10/m10_ob1_taketown.bsc", 0, 0)
+		sg_htdrop_intro = SGroup_CreateIfNotFound("sg_htdrop_intro")
+		sg_htdrop_intro_troops = SGroup_CreateIfNotFound("sg_htdrop_intro_troops")
+		sg_intro_main1 = SGroup_CreateIfNotFound("sg_intro_main1")
+		sg_intro_main2 = SGroup_CreateIfNotFound("sg_intro_main2")
+		sg_intro_main3 = SGroup_CreateIfNotFound("sg_intro_main3")
+		Util_CreateSquadsAtMarker(ALLIES, sg_htdrop_intro, SBP.ALLIES.HALFTRACK, spn_south1)
+		Util_CreateSquadsAtMarker(ALLIES, sg_intro_main1, SBP.ALLIES.RIFLEMEN, main_intro1)
+		Cmd_Move(sg_intro_main1, main_intro1a)
+		Util_CreateSquadsAtMarker(ALLIES, sg_intro_main2, SBP.ALLIES.OFFICER, main_intro2)
+		Cmd_Move(sg_intro_main2, main_intro2a)
+		Util_CreateSquadsAtMarker(ALLIES, sg_intro_main3, SBP.CW.COMMANDOS, main_intro3)
+		Cmd_Move(sg_intro_main3, main_intro3a)
+		Modify_UnitSpeed(sg_htdrop_intro, 1.0)
+		Util_CreateSquadsAndGarrison(ALLIES, sg_htdrop_intro_troops, ht_drop_troops[World_GetRand(1, table.getn(ht_drop_troops))], sg_htdrop_intro, 1)
+		Cmd_Move(sg_htdrop_intro, fow3)
+	elseif status_intro_main == 4 then
+		Camera_ResetToDefault()
+		Camera_MoveToPosition(spn_south1, false)
+		Camera_SetOrbit(1)
+		Camera_SetZoomDist(25)
+		Camera_SetDeclination(0.45)
+		Camera_FollowSGroup(sg_intro_main2)
+		Game_FadeToBlack(FADE_IN, 2)
+		EGroup_InstantCaptureStrategicPoint(eg_south_control, ALLIES)
+		EGroup_SetPlayerOwner(retreat1, player1)
+		EGroup_SetPlayerOwner(retreat2, player2)
+		eg_triage = EGroup_CreateIfNotFound("eg_triage")
+		Util_CreateEntities(player2, eg_triage, EBP.ALLIES.TRIAGE, mkr_triage, 1)
+		eg_triage2 = EGroup_CreateIfNotFound("eg_triage2")
+		Util_CreateEntities(player1, eg_triage2, EBP.ALLIES.TRIAGE, mkr_triage2, 1)
+		eg_quarter = EGroup_CreateIfNotFound("eg_quarter")
+		Util_CreateEntities(player1, eg_quarter, EBP.ALLIES.QUARTER_MASTER, quarter1, 1)
+		eg_quarter2 = EGroup_CreateIfNotFound("eg_quarter2")
+		Util_CreateEntities(player2, eg_quarter2, EBP.ALLIES.QUARTER_MASTER, quarter2, 1)
+		Game_LoadAtmosphere("data:art/scenarios/presets/atmosphere/STRONGHOLD_MORNING.APS", 10)
+		FOW_RevealMarker(Marker_FromName("fow2", "green_marker"), -1)
+		FOW_RevealMarker(Marker_FromName("fow3", "green_marker"), -1)
+		FOW_RevealMarker(Marker_FromName("fow4", "green_marker"), -1)
+	elseif status_intro_main == 6 then
+		JointOps_Util_GlobalMessage(JointOps_Util_CreateLocString("A few hours later ..."), 3)
+	elseif status_intro_main == 10 then
+		Game_FadeToBlack(true, 1)
+	elseif status_intro_main == 12 then
+		Camera_ResetToDefault()
+		Camera_MoveToPosition(intro_cam, false)
+		Camera_AutoRotate(Util_GetPosition(intro_cam), 25, 25, 2)
+		Game_FadeToBlack(FADE_IN, 1)
+	elseif status_intro_main == 13 then
+		JointOps_Util_GlobalMessage(JointOps_Util_CreateLocString("Our main goal is to liberate the town center"), 3)
+	elseif status_intro_main == 17 then
+		Game_FadeToBlack(true, 1)
+	elseif status_intro_main == 18 then
+		Camera_AutoRotate(Util_GetPosition(eg_bridge_strat1), 40, 45, 1)
+		Game_FadeToBlack(FADE_IN, 1)
+	elseif status_intro_main == 19 then
+		JointOps_Util_GlobalMessage(JointOps_Util_CreateLocString("Axis forces will surely try to push us back"), 2)
+	elseif status_intro_main == 22 then
+		Game_FadeToBlack(true, 1)
+	elseif status_intro_main == 23 then
+		Camera_AutoRotate(Util_GetPosition(eg_bridge_strat2), 40, 45, 1)
+		Game_FadeToBlack(FADE_IN, 1)
+	elseif status_intro_main == 24 then
+		JointOps_Util_GlobalMessage(JointOps_Util_CreateLocString("Protect both bridge sectors while you attack"), 2)
+	elseif status_intro_main == 27 then
+		Game_FadeToBlack(true, 1)
+	elseif status_intro_main == 28 then
+		SGroup_DestroyAllSquads(sg_htdrop_intro)
+		SGroup_Clear(sg_htdrop_intro)
+		SGroup_DestroyAllSquads(sg_htdrop_intro_troops)
+		SGroup_Clear(sg_htdrop_intro_troops)
+		SGroup_DestroyAllSquads(sg_intro_main1)
+		SGroup_Clear(sg_intro_main1)
+		SGroup_DestroyAllSquads(sg_intro_main2)
+		SGroup_Clear(sg_intro_main2)
+		SGroup_DestroyAllSquads(sg_intro_main3)
+		SGroup_Clear(sg_intro_main3)
+		Sound_StopMusic(2, 0)
+		Sound_SetVolume("Music", 0.5, 0)
+		Sound_PlayMusic("music/brothers ambient 2.bsc", 0, 0)
+		Camera_StopAutoRotating()
+		Camera_ResetToDefault()
+		if Player_GetID(Game_GetLocalPlayer()) == Player_GetID(player2) then
+			Camera_MoveToPosition(bridge_right_def3, false)
+		else
+			Camera_MoveToPosition(att3, false)
+		end
+		Game_FadeToBlack(FADE_IN, 1)
+		setup_allies_fhq()
+		Rule_AddOneShot(Mission_WeaponDelivery, World_GetRand(2, 5) * 60)
+		Rule_AddOneShot(Ambient_Allies_Attack, World_GetRand(20, 30))
+		Rule_AddOneShot(InfantryAttackForces, World_GetRand(120, 180))
+		Rule_AddInterval(supply_drop, World_GetRand(7, 10) * 59)
+		start_main()
+		Rule_AddOneShot(start_fhq, 15)
+		Rule_AddOneShot(intel_bridges, 5)
+		Rule_AddOneShot(hint3, 10)
+		Ht_drop()
+		Game_Letterbox(false, 1)
+		Rule_RemoveMe()
+	end
+	
+	status_intro_main = status_intro_main + 1
+end
+
+function intro_aa()
+	if status_intro_aa == 1 then
+		Rule_AddInterval(intro_aa, 1)
+		Game_Letterbox(true, 0)
+		Game_FadeToBlack(true, 2)
+		Sound_StopMusic(2, 0)
+	elseif status_intro_aa == 3 then
+		Sound_PlayMusic("music/sp/m10/m10_ob1_taketown.bsc", 0, 0)
+		FOW_RevealMarker(Marker_FromName("intro_aa1", "cyan_marker"), -1)
+		FOW_RevealMarker(Marker_FromName("intro_aa2", "cyan_marker"), -1)
+		Game_FadeToBlack(FADE_IN, 1)
+		Camera_AutoRotate(Util_GetPosition(intro_aa1), 40, 40, 2)
+	elseif status_intro_aa == 4 then
+		JointOps_Util_GlobalMessage(JointOps_Util_CreateLocString("Axis forces still have anti air defense we need to eliminate"), 3)
+	elseif status_intro_aa == 8 then
+		Game_FadeToBlack(true, 1)
+	elseif status_intro_aa == 9 then
+		Camera_AutoRotate(Util_GetPosition(intro_aa2), 40, 40, 2)
+		Game_FadeToBlack(FADE_IN, 1)
+	elseif status_intro_aa == 10 then
+		JointOps_Util_GlobalMessage(JointOps_Util_CreateLocString("There a some axis officers marking targets for artillery, kill them"), 3)
+	elseif status_intro_aa == 14 then
+		Game_FadeToBlack(true, 1)
+	elseif status_intro_aa == 15 then
+		Sound_StopMusic(2, 0)
+		Sound_SetVolume("Music", 0.5, 0)
+		Sound_PlayMusic("music/brothers ambient 2.bsc", 0, 0)
+		Camera_StopAutoRotating()
+		Camera_ResetToDefault()
+		if Player_GetID(Game_GetLocalPlayer()) == Player_GetID(player2) then
+			Camera_MoveToPosition(bridge_right_def3, false)
+		else
+			Camera_MoveToPosition(att3, false)
+		end
+		Game_FadeToBlack(FADE_IN, 1)
+		FOW_UnRevealMarker(Marker_FromName("intro_aa1", "cyan_marker"), -1)
+		FOW_UnRevealMarker(Marker_FromName("intro_aa2", "cyan_marker"), -1)
+		Game_Letterbox(false, 1)
+		Rule_AddOneShot(start_aa, 5)
+		Rule_AddOneShot(start_arti, 10)
+		Rule_AddOneShot(hint4, 20)
+		Rule_RemoveMe()
+	end
+	
+	status_intro_aa = status_intro_aa + 1
+end
+
+function intro_gliders()
+	if status_intro_gliders == 1 then
+		gliders_intro_running = true
+		Rule_AddInterval(intro_gliders, 1)
+		Game_Letterbox(true, 0)
+		Game_FadeToBlack(true, 2)
+		Sound_StopMusic(2, 0)
+	elseif status_intro_gliders == 3 then
+		spawn_gliders()
+		Sound_PlayMusic("music/sp/m10/m10_ob1_taketown.bsc", 0, 0)
+		FOW_RevealMarker(Marker_FromName("fuel_base", "green_marker"), -1)
+		Game_FadeToBlack(FADE_IN, 1)
+		Camera_AutoRotate(Util_GetPosition(plane2), 40, 40, 2)
+	elseif status_intro_gliders == 4 then
+		JointOps_Util_GlobalMessage(JointOps_Util_CreateLocString("Our allies have landed some gliders to support us"), 3)
+	elseif status_intro_gliders == 8 then
+		Game_FadeToBlack(true, 1)
+	elseif status_intro_gliders == 9 then
+		Camera_AutoRotate(Util_GetPosition(fuel_base), 40, 40, 2)
+		Game_FadeToBlack(FADE_IN, 1)
+	elseif status_intro_gliders == 10 then
+		JointOps_Util_GlobalMessage(JointOps_Util_CreateLocString("Here is the axis fuel base, capture it to stop the enemy from calling additional tanks"), 3)
+	elseif status_intro_gliders == 14 then
+		Game_FadeToBlack(true, 1)
+	elseif status_intro_gliders == 15 then
+		Sound_StopMusic(2, 0)
+		Sound_SetVolume("Music", 0.5, 0)
+		Sound_PlayMusic("music/brothers ambient 2.bsc", 0, 0)
+		Camera_StopAutoRotating()
+		Camera_ResetToDefault()
+		if Player_GetID(Game_GetLocalPlayer()) == Player_GetID(player2) then
+			Camera_MoveToPosition(bridge_right_def3, false)
+		else
+			Camera_MoveToPosition(att3, false)
+		end
+		Game_FadeToBlack(FADE_IN, 1)
+		FOW_UnRevealMarker(Marker_FromName("fuel_base", "green_marker"), -1)
+		Game_Letterbox(false, 1)
+		Rule_AddOneShot(start_gliders, 5)
+		Rule_AddOneShot(start_fuelbase, 10)
+		Rule_AddOneShot(hint4, 20)
+		gliders_intro_running = false
+		Rule_RemoveMe()
+	end
+	
+	status_intro_gliders = status_intro_gliders + 1
+end
+
+function intro_give_arti()
+	if status_intro_arti == 1 then
+		arti_intro_running = true
+		Rule_AddInterval(intro_give_arti, 1)
+		Game_Letterbox(true, 0)
+		Game_FadeToBlack(true, 2)
+	elseif status_intro_arti == 3 then
+		Camera_ResetToDefault()
+		spawn_allies_arty()
+		Game_FadeToBlack(FADE_IN, 1)
+		if Player_GetID(Game_GetLocalPlayer()) == Player_GetID(player2) then
+			Camera_MoveToPosition(allies_arty2, false)
+		else
+			Camera_MoveToPosition(allies_arty1, false)
+		end
+	elseif status_intro_arti == 4 then
+		JointOps_Util_GlobalMessage(JointOps_Util_CreateLocString("We now have artillery support"), 2)
+	elseif status_intro_arti == 6 then
+		Game_Letterbox(false, 1)
+		Rule_AddInterval(fire_arti_units, 5)
+		Rule_AddInterval(goliath, 180)
+		Rule_AddOneShot(hint4, 15)
+		arti_intro_running = false
+		Rule_RemoveMe()
+	end
+	
+	status_intro_arti = status_intro_arti + 1
+end
+
+function OutroWin()
+	if status_outro == 1 then
+		Rule_RemoveAll()
+		Rule_AddInterval(OutroWin, 1)
+		Game_FadeToBlack(true, 2)
+	elseif status_outro == 2 then
+		for key, value in pairs(__t_Objectives) do
+			if Objective_IsStarted(value) then
+				Objective_Show(value, false)
+			end
+		end
+		Sound_PlayMusic("Music/enterthesquarecombat.bsc", 3, 0)
+		Sound_SetVolume("Speech", 0.0, 1.5)
+		Sound_SetVolume("Ambient", 0.0, 1.5)
+		Sound_SetVolume("SFXmaster", 0.0, 1.5)
+		Game_Letterbox(true, 0)
+		sg_outro1 = SGroup_CreateIfNotFound("sg_outro1")
+		sg_outro2 = SGroup_CreateIfNotFound("sg_outro2")
+		sg_outro3 = SGroup_CreateIfNotFound("sg_outro3")
+		sg_outro4 = SGroup_CreateIfNotFound("sg_outro4")
+		sg_all = SGroup_CreateIfNotFound("sg_all")
+	elseif status_outro == 3 then
+		Player_GetAll(AXIS, sg_all)
+		if not SGroup_IsEmpty(sg_all) then
+			Cmd_Move(sg_all, fb_tank)
+		end
+		outro_troops = {SBP.CW.CHURCHILL_CROC, SBP.ALLIES.PERSHING, SBP.CW.FIREFLY}
+		SGroup_DeSpawn(sg_outro1)
+		Util_CreateSquadsAtMarker(player1, sg_outro1, outro_troops[World_GetRand(1, table.getn(outro_troops))], att_spn1, 1)
+		Modify_UnitSpeed(sg_outro1, 1.5)
+		Modify_WeaponDamage(sg_outro1, "hardpoint_01", 30)
+		Modify_WeaponDamage(sg_outro1, "hardpoint_02", 30)
+		SGroup_SetInvulnerable(sg_outro1, true)
+		Modify_WeaponRange(sg_outro1, "hardpoint_01", 1.1)
+		Cmd_Move(sg_outro1, intro4)
+		SGroup_DeSpawn(sg_outro2)
+		Util_CreateSquadsAtMarker(player1, sg_outro2, outro_troops[World_GetRand(1, table.getn(outro_troops))], spn_north1, 1)
+		Modify_UnitSpeed(sg_outro2, 1.5)
+		Modify_WeaponDamage(sg_outro2, "hardpoint_01", 30)
+		Modify_WeaponDamage(sg_outro2, "hardpoint_02", 30)
+		Modify_Vulnerability(sg_outro2, 0.1)
+		Modify_WeaponRange(sg_outro2, "hardpoint_01", 1.1)
+		Cmd_Move(sg_outro2, intro10)
+		SGroup_DeSpawn(sg_outro3)
+		Util_CreateSquadsAtMarker(player1, sg_outro3, outro_troops[World_GetRand(1, table.getn(outro_troops))], att_spn3, 1)
+		Modify_UnitSpeed(sg_outro3, 1.5)
+		Modify_WeaponDamage(sg_outro3, "hardpoint_01", 30)
+		Modify_WeaponDamage(sg_outro3, "hardpoint_02", 30)
+		Modify_Vulnerability(sg_outro3, 0.1)
+		Modify_WeaponRange(sg_outro3, "hardpoint_01", 1.1)
+		Cmd_Move(sg_outro3, intro1)
+		SGroup_DeSpawn(sg_outro4)
+		Util_CreateSquadsAtMarker(player1, sg_outro4, outro_troops[World_GetRand(1, table.getn(outro_troops))], att_spn4, 1)
+		Modify_UnitSpeed(sg_outro4, 1.5)
+		Modify_WeaponDamage(sg_outro4, "hardpoint_01", 30)
+		Modify_WeaponDamage(sg_outro4, "hardpoint_02", 30)
+		Modify_Vulnerability(sg_outro4, 0.1)
+		Modify_WeaponRange(sg_outro4, "hardpoint_01", 1.1)
+		Cmd_Move(sg_outro4, intro5)
+		FOW_RevealAll()
+		Camera_ResetToDefault()
+		Game_FadeToBlack(FADE_IN, 1)
+		Camera_SetOrbit(5)
+		Camera_SetDeclination(0.6)
+		Camera_MoveToPosition(intro9, false)
+	elseif status_outro == 4 then
+		Camera_MoveToPosition(fuel_base, true, 0.01)
+		JointOps_Util_GlobalMessage(LOCSTRINGS.WIN, 5)
+	elseif status_outro == 10 then
+		display_stat(true)
+	elseif status_outro == 30 then
+		Camera_ResetToDefault()
+		Game_Letterbox(false, 1)
+		Sound_StopMusic(4, 0)
+	elseif status_outro == 31 then
+		display_stat(false)
+		World_SetTeamWin(Player_GetTeam(player1), "annihilate")
+		World_SetGameOver()
+	end
+	
+	status_outro = status_outro + 1
+end
+
+function Mission_SetupEnemySquads()
+	-- sgroup = sgroup name
+	-- mkr = spawn location marker table, first marker will be used when spawning for the first time else random
+	-- sbp = squad blueprint table, first sbp will be used when spawning for the first time else random
+	-- role = squad role:
+	--         - building, use "mkr" to set the egroup (building) where it spawns instantly
+	--         - defend, use optional "defpos" table to set defend location or building where to run
+	--         - patrol
+	--            - path = squad path name
+	--            - *path_reverse = follow the path in reverse direction
+	--            - *path_toggle = toggle direction at the end of the path
+	--            - *path_waypoint_pause = delay time in seconds at each waypoint on the path
+	-- *upgrade = upgrade table, gets randomly one upgrade, only use when one sbp class type is defined
+	-- *camo = true/false, only for snipers
+	-- *instant_setup = true/false, only for mg/mortar
+	-- *revenge = true/false, if squads gets attacked it will hunt the attacker down
+	-- *respawn_time = delay in minutes for squad to respawn, if zero or not set the squad will not respawn after it dies
+	-- *requirement = egroup (building) that is required for squad to spawn, if building is destroyed or decapped by player the squad will stop respawning
+	-- *walk = true/false, if squad is infantry this can be used to make the squad walk slower (good for patrols)
+	-- *speed = vehicle speed modifier scalefactor
+	-- *vulnerability = vulnerability modifier scalefactor
+	-- *damage = weapon damage modifier scalefactor
+	-- *range = weapon range modifier scalefactor
+	-- *cooldown = weapon cooldown modifier scalefactor
+	-- *vet = squad veterancy level
+	
+	JOINTOPS_ENEMY_TROOPS =
+	{
+		-- starting area
+		{sgroup = "sg_south1", speed = 0.5, mkr = {patrol1_1}, role = "patrol", revenge = true, path_reverse = true, path = "path_south", sbp = {SBP.ELITE.ARMOURCAR_221}},
+		{sgroup = "sg_southdef1", mkr = {bridge_left_def1}, defpos = {bridge_left_def1}, role = "defend", sbp = {SBP.ELITE.ASSAULTGRENADIER}},
+		{sgroup = "sg_southdef2", mkr = {bridge_left_def2}, role = "patrol", revenge = true, path = "path_bridge1", sbp = {SBP.AXIS.GRENADIER}},
+		{sgroup = "sg_southdef3", mkr = {bridge_right_def1}, defpos = {bridge_right_def1}, role = "defend", sbp = {SBP.ELITE.PANZERGRENADIER}},
+		{sgroup = "sg_southdef4", mkr = {bridge_right_def2}, role = "patrol", revenge = true, path = "path_bridge2", sbp = {SBP.ELITE.ASSAULTGRENADIER}},
+		
+		-- south
+		{sgroup = "sg_south_patrol1", vet = 1, revenge = true, mkr = {fhq3_spn}, requirement = eg_axis_fhq3, role = "patrol", respawn_time = 2, path = "path_south1", walk = true, sbp = {SBP.AXIS.VOLKSGRENADIER}, upgrade = {UPG.AXIS.VOLKS_MP40}},
+		{sgroup = "sg_south_patrol2", vet = 1, revenge = true, mkr = {fhq1_spn}, requirement = eg_axis_fhq1, role = "patrol", respawn_time = 2, path = "path_south2", walk = true, sbp = {SBP.AXIS.VOLKSGRENADIER}, upgrade = {UPG.AXIS.VOLKS_MP40}},
+		{sgroup = "sg_south_patrol3", mkr = {south_left_spn}, requirement = eg_axis_fhq2, vet = 1, role = "patrol", respawn_time = 3, path = "path_south3", speed = 0.6, damage = 1.2, sbp = {SBP.AXIS.HALFTRACK_FLAME}},
+		
+		-- fhq1 defense
+		{sgroup = "sg_def1a", mkr = {eg_axis_fhq1}, respawn_time = 3, requirement = eg_axis_fhq1, role = "building", sbp = {SBP.AXIS.HEAVYMG, SBP.AXIS.SNIPER}},
+		{sgroup = "sg_def1b", mkr = {fhq1_spn}, defpos = {defpos1a, defpos1b}, requirement = eg_axis_fhq1, respawn_time = 2, role = "defend", sbp = {SBP.ELITE.FALLSCHIRMJAGER}},
+		{sgroup = "sg_def1c", mkr = {fhq1_spn}, defpos = {defpos1c, defpos1d}, requirement = eg_axis_fhq1, respawn_time = 3, role = "defend", sbp = {SBP.AXIS.STORMTROOPER}, upgrade = {UPG.AXIS.STORM_MP44}},
+		{sgroup = "sg_defpatrol1", vet = 1, revenge = true, mkr = {fhq1_spn}, requirement = eg_axis_fhq1, role = "patrol", respawn_time = 2, path = "path_fhq1", walk = true, sbp = {SBP.AXIS.KNIGHTSCROSS}},
+		
+		-- fhq2 defense
+		{sgroup = "sg_def2a", mkr = {eg_axis_fhq2}, respawn_time = 3, requirement = eg_axis_fhq2, role = "building", sbp = {SBP.AXIS.HEAVYMG, SBP.AXIS.SNIPER}},
+		{sgroup = "sg_def2b", mkr = {fhq2_spn}, defpos = {defpos2a, defpos2b}, requirement = eg_axis_fhq2, respawn_time = 2, role = "defend", sbp = {SBP.ELITE.ASSAULTGRENADIER}, upgrade = {UPG.ELITE.G43}},
+		{sgroup = "sg_def2c", mkr = {fhq2_spn}, defpos = {defpos2c, defpos2d}, requirement = eg_axis_fhq2, respawn_time = 3, role = "defend", sbp = {SBP.AXIS.KNIGHTSCROSS}},
+		{sgroup = "sg_defpatrol2", vet = 1, revenge = true, mkr = {fhq2_spn}, requirement = eg_axis_fhq2, role = "patrol", respawn_time = 2, path = "path_fhq2", walk = true, sbp = {SBP.AXIS.PIONEER}, upgrade = {UPG.AXIS.PIONEER_FLAMETHROWER}},
+		
+		-- fhq3 defense
+		{sgroup = "sg_def3a", mkr = {eg_axis_fhq3}, respawn_time = 3, requirement = eg_axis_fhq3, role = "building", sbp = {SBP.AXIS.HEAVYMG, SBP.AXIS.SNIPER}},
+		{sgroup = "sg_def3b", mkr = {fhq3_spn}, defpos = {defpos3a, defpos3b}, requirement = eg_axis_fhq3, respawn_time = 2, role = "defend", sbp = {SBP.AXIS.STORMTROOPER}},
+		{sgroup = "sg_def3c", mkr = {fhq3_spn}, defpos = {defpos3c, defpos3d}, requirement = eg_axis_fhq3, respawn_time = 3, role = "defend", sbp = {SBP.ELITE.FALLSCHIRMJAGER}},
+		{sgroup = "sg_defpatrol3", vet = 1, path_reverse = true, mkr = {fhq3_spn}, requirement = eg_axis_fhq3, role = "patrol", respawn_time = 2, path = "path_fhq3", walk = true, sbp = {SBP.AXIS.SNIPER}, camo = true},
+		
+		-- fhq4 defense
+		{sgroup = "sg_def4a", vet = 2, mkr = {eg_axis_fhq4}, respawn_time = 5, requirement = eg_axis_fhq4, role = "building", sbp = {SBP.AXIS.HEAVYMG, SBP.AXIS.SNIPER}},
+		{sgroup = "sg_def4b", vet = 1, mkr = {fhq4_spn}, defpos = {defpos4a, defpos4b}, requirement = eg_axis_fhq4, respawn_time = 6, role = "defend", sbp = {SBP.AXIS.KNIGHTSCROSS}},
+		{sgroup = "sg_def4c", mkr = {fhq4_spn}, defpos = {defpos4c, defpos4d}, requirement = eg_axis_fhq4, respawn_time = 7, role = "defend", sbp = {SBP.ELITE.ASSAULTGRENADIER}},
+		{sgroup = "sg_defpatrol4", vet = 1, mkr = {fhq4_spn}, requirement = eg_axis_fhq4, role = "patrol", respawn_time = 2, path = "path_left1", walk = true, sbp = {SBP.AXIS.SNIPER}, camo = true},
+		{sgroup = "sg_defpatrol5", mkr = {left_cntr_spn}, requirement = eg_axis_fhq4, vet = 1, role = "patrol", respawn_time = 6, path = "path_left2", speed = 0.5, damage = 1.2, sbp = {SBP.AXIS.PUMA}},
+		{sgroup = "sg_defpatrol6", mkr = {spn_north1}, requirement = eg_axis_fhq4, role = "patrol", respawn_time = 5, path = "path_left3", speed = 0.5, damage = 1, sbp = {SBP.ELITE.HALFTRACK_SNIPER}},
+		{sgroup = "sg_defpatrol7", mkr = {left_cntr_spn}, requirement = eg_axis_fhq4, role = "patrol", respawn_time = 6, path = "path_left4", speed = 0.6, damage = 1, sbp = {SBP.AXIS.PANZER}},
+		{sgroup = "sg_fb_tank", mkr = {spn_north1}, defpos = {misc_def_fb}, requirement = eg_axis_fhq4, role = "defend", sbp = {SBP.ELITE.WIRBLEWIND}},
+		{sgroup = "sg_fb_tank2", mkr = {spn_north1}, defpos = {fb_tank}, requirement = eg_axis_fhq4, role = "defend", sbp = {SBP.ELITE.HALFTRACK_MORTAR}},
+		
+		-- axis hq defense
+		
+		{sgroup = "sg_def5a", vet = 1, mkr = {axis_main_base}, respawn_time = 6, requirement = axis_main_base, role = "building", sbp = {SBP.AXIS.SNIPER}},
+		{sgroup = "sg_def5b", vet = 1, mkr = {axis_main_base}, respawn_time = 7, requirement = axis_main_base, role = "building", sbp = {SBP.AXIS.HEAVYMG}},
+		{sgroup = "sg_def_sniper", vet = 1, mkr = {eg_hq_church}, respawn_time = 8, requirement = eg_hq_church, role = "building", sbp = {SBP.AXIS.SNIPER}},
+		{sgroup = "sg_def5c", vet = 1, mkr = {hq_spn}, defpos = {eg_hq1, eg_hq2}, requirement = axis_main_base, respawn_time = 6, role = "defend", range = 1, damage = 0.8, sbp = {SBP.AXIS.HEAVYMG}},
+		{sgroup = "sg_def5d", vet = 1, mkr = {hq_spn}, defpos = {eg_hq3, eg_hq4}, requirement = axis_main_base, respawn_time = 7, role = "defend", range = 1, damage = 0.8, sbp = {SBP.AXIS.HEAVYMG}},
+		{sgroup = "sg_def5e", vet = 1, mkr = {hq_spn}, defpos = {eg_hq_church}, requirement = axis_main_base, respawn_time = 5, role = "defend", range = 1, damage = 1, sbp = {SBP.AXIS.SNIPER}},
+		{sgroup = "sg_main_patrol1", vet = 1, revenge = true, mkr = {hq_spn}, requirement = axis_main_base, role = "patrol", respawn_time = 6, path = "path_right", walk = true, sbp = {SBP.AXIS.STORMTROOPER}, upgrade = {UPG.AXIS.STORM_PANZERSCHRECK}},
+		{sgroup = "sg_main_patrol2", vet = 2, revenge = true, mkr = {hq_spn}, requirement = axis_main_base, role = "patrol", respawn_time = 7, path = "path_right1", walk = true, sbp = {SBP.AXIS.GRENADIER}, upgrade = {UPG.AXIS.GREN_MG42}},
+		{sgroup = "sg_main_patrol3", vet = 1, revenge = true, mkr = {hq_spn}, requirement = axis_main_base, role = "patrol", respawn_time = 8, path = "path_center", walk = true, sbp = {SBP.AXIS.STORMTROOPER}, upgrade = {UPG.AXIS.STORM_PANZERSCHRECK}},
+		{sgroup = "sg_main_tank", mkr = {spn_north5}, requirement = eg_axis_fhq4, vet = 3, role = "patrol", respawn_time = 3, path = "path_center2", speed = 0.5, damage = 1, range = 1, sbp = {SBP.AXIS.TIGER}},
+		{sgroup = "sg_mortar1", vet = 1, mkr = {hq_spn}, defpos = {mortar1}, requirement = axis_main_base, respawn_time = 4, role = "defend", range = 0.75, sbp = {SBP.AXIS.MORTAR}},
+		{sgroup = "sg_mortar2", vet = 1, mkr = {hq_spn}, defpos = {mortar2}, requirement = axis_main_base, respawn_time = 5, role = "defend", range = 0.75, sbp = {SBP.AXIS.MORTAR}},
+		{sgroup = "sg_mortar3", vet = 1, mkr = {hq_spn}, defpos = {mortar3}, requirement = axis_main_base, respawn_time = 4, role = "defend", range = 0.75, sbp = {SBP.AXIS.MORTAR}},
+		{sgroup = "sg_at1", vet = 3, mkr = {hq_spn}, defpos = {at1}, requirement = axis_main_base, role = "defend", sbp = {SBP.AXIS.PAK_38}},
+		{sgroup = "sg_at2", vet = 3, mkr = {hq_spn}, defpos = {at2}, requirement = axis_main_base, role = "defend", sbp = {SBP.AXIS.PAK_38}},
+		{sgroup = "sg_at3", vet = 3, mkr = {hq_spn}, defpos = {at3}, requirement = axis_main_base, role = "defend", sbp = {SBP.AXIS.PAK_38}},
+		{sgroup = "sg_left_patrol1", vet = 1, revenge = true, mkr = {hq_spn2}, requirement = axis_main_base, role = "patrol", respawn_time = 6, path = "path_left5", path_reverse = true, walk = true, sbp = {SBP.AXIS.STORMTROOPER}, upgrade = {UPG.AXIS.STORM_PANZERSCHRECK}},
+		{sgroup = "sg_left_patrol2", vet = 1, revenge = true, mkr = {hq_spn2}, requirement = axis_main_base, role = "patrol", respawn_time = 7, path = "path_left6", path_reverse = true, walk = true, sbp = {SBP.AXIS.GRENADIER}, upgrade = {UPG.AXIS.GREN_PANZERSCHRECK}},
+		{sgroup = "sg_hq_pnzr", vet = 3, mkr = {spn_north5}, defpos = {hq_pnzr}, requirement = eg_axis_fhq4, respawn_time = 3, role = "defend", sbp = {SBP.AXIS.PANTHER}},
+		
+		-- officers
+		
+		{sgroup = "sg_ari_officer1", vet = 3, mkr = {eg_ari1}, requirement = axis_main_base, role = "building", sbp = {SBP.AXIS.OFFICER}},
+		{sgroup = "sg_ari_officer2", vet = 3, mkr = {eg_ari2}, requirement = axis_main_base, role = "building", sbp = {SBP.AXIS.OFFICER}},
+		{sgroup = "sg_ari_officer_def1", mkr = {eg_ari2}, requirement = axis_main_base, role = "building", sbp = {SBP.ELITE.ASSAULTGRENADIER}},
+		{sgroup = "sg_ari_officer_def2", vet = 3, mkr = {eg_ari2}, requirement = axis_main_base, role = "building", sbp = {SBP.AXIS.KNIGHTSCROSS}},
+		{sgroup = "sg_officer1", vet = 3, vulnerability = 0.5, mkr = {eg_hq2}, requirement = axis_main_base, role = "building", sbp = {SBP.AXIS.OFFICER}},
+		{sgroup = "sg_officer2", vet = 3, vulnerability = 0.5, mkr = {eg_house_back1}, requirement = axis_main_base, role = "building", sbp = {SBP.AXIS.OFFICER}},
+		{sgroup = "sg_officer3", vet = 3, vulnerability = 0.5, mkr = {eg_house_back2}, requirement = axis_main_base, role = "building", sbp = {SBP.AXIS.OFFICER}},
+		
+		-- various defense
+		{sgroup = "sg_def_v1", mkr = {hq_spn2}, defpos = {house_a1, house_a2, house_a3}, requirement = eg_axis_fhq4, respawn_time = 5, role = "defend", sbp = {SBP.AXIS.SNIPER, SBP.AXIS.KNIGHTSCROSS, SBP.AXIS.HEAVYMG, SBP.ELITE.TANKBUSTERS, SBP.ELITE.ASSAULTGRENADIER}},
+		{sgroup = "sg_def_v2", mkr = {hq_spn2}, defpos = {house_b1, house_b2, house_b3}, requirement = eg_axis_fhq4, respawn_time = 6, role = "defend", sbp = {SBP.AXIS.KNIGHTSCROSS, SBP.AXIS.HEAVYMG, SBP.ELITE.TANKBUSTERS, SBP.ELITE.ASSAULTGRENADIER}},
+		{sgroup = "sg_def_v3", mkr = {hq_spn2}, defpos = {house_c1, house_c2, house_c3}, requirement = eg_axis_fhq4, respawn_time = 4, role = "defend", sbp = {SBP.AXIS.HEAVYMG, SBP.ELITE.TANKBUSTERS, SBP.ELITE.ASSAULTGRENADIER, SBP.AXIS.SNIPER, SBP.AXIS.KNIGHTSCROSS}},
+		{sgroup = "sg_def_v4", mkr = {hq_spn2}, defpos = {house_d1, house_d2, house_d3, house_d4, house_d5}, requirement = eg_axis_fhq4, respawn_time = 6, role = "defend", sbp = {SBP.ELITE.TANKBUSTERS, SBP.ELITE.ASSAULTGRENADIER, SBP.AXIS.SNIPER, SBP.AXIS.KNIGHTSCROSS}},
+		{sgroup = "sg_def_v5", mkr = {hq_spn2}, defpos = {house_e1, house_e2, house_e3, house_e4, house_e5}, requirement = eg_axis_fhq4, respawn_time = 5, role = "defend", sbp = {SBP.ELITE.TANKBUSTERS, SBP.ELITE.ASSAULTGRENADIER, SBP.AXIS.SNIPER, SBP.AXIS.KNIGHTSCROSS}},
+		{sgroup = "sg_def_v6", mkr = {hq_spn2}, defpos = {house_f1, house_f2, house_f3, house_f4, house_f5}, requirement = eg_axis_fhq4, respawn_time = 6, role = "defend", sbp = {SBP.ELITE.TANKBUSTERS, SBP.ELITE.ASSAULTGRENADIER, SBP.AXIS.SNIPER, SBP.AXIS.KNIGHTSCROSS}},
+		
+		{sgroup = "sg_aadef1", vet = 1, mkr = {spn_north5}, defpos = {aa1def}, requirement = axis_main_base, role = "defend", sbp = {SBP.AXIS.KNIGHTSCROSS}},
+		{sgroup = "sg_aadef2", vet = 1, mkr = {spn_north5}, defpos = {aa2def}, requirement = axis_main_base, role = "defend", sbp = {SBP.AXIS.KNIGHTSCROSS}},
+		
+		-- backup troops
+		
+		{sgroup = "sg_backup1", vet = 2, mkr = {spn_north4}, defpos = {backup1}, requirement = eg_axis_fhq4, respawn_time = 4, role = "defend", range = 1, damage = 1, sbp = {SBP.AXIS.HALFTRACK_FLAME, SBP.AXIS.STUG, SBP.AXIS.PUMA, SBP.AXIS.OSTWIND}},
+		{sgroup = "sg_backup2", mkr = {spn_north5}, defpos = {backup2}, requirement = eg_axis_fhq4, respawn_time = 4, role = "defend", range = 1.2, damage = 1.2, sbp = {SBP.AXIS.KNIGHTSCROSS, SBP.ELITE.ASSAULTGRENADIER, SBP.ELITE.TANKBUSTERS}},
+		{sgroup = "sg_backup3", mkr = {spn_north5}, defpos = {backup2}, requirement = eg_axis_fhq4, respawn_time = 4, role = "defend", range = 1.2, damage = 0.5, sbp = {SBP.AXIS.SNIPER}, camo = true},
+		
+		-- artillery
+		
+		{sgroup = "sg_hummel1", mkr = {spn_north5}, defpos = {hummel1}, requirement = eg_axis_fhq4, respawn_time = 2, role = "defend", sbp = {SBP.ELITE.HUMMEL}},
+		{sgroup = "sg_hummel2", mkr = {spn_north4}, defpos = {hummel2}, requirement = eg_axis_fhq4, respawn_time = 2, role = "defend", sbp = {SBP.ELITE.HUMMEL}},
+		{sgroup = "sg_nebel1", mkr = {spn_north4}, defpos = {nebel1}, requirement = eg_axis_fhq4, respawn_time = 2, role = "defend", sbp = {SBP.AXIS.NEBELWERFER}},
+		{sgroup = "sg_nebel2", mkr = {spn_north5}, defpos = {nebel2}, requirement = eg_axis_fhq4, respawn_time = 2, role = "defend", sbp = {SBP.AXIS.NEBELWERFER}},
+	}
+	JointOps_InitEnemySquadManager(AXIS)
+	
+	JOINTOPS_CALLBACKUP_TRIGGER_COUNT = 3
+	JointOps_EnemyCallBackup = Mission_CallBackup
+end
+
+function Mission_CallBackup(caller, pos)
+	backup_targetlocation = pos
+	if backup_state == nil then
+		backup_state = 1
+		
+		if not SGroup_IsEmpty(sg_backup1) then
+			intel_vehicle()
+			-- Sound_Play2D(SOUNDS.ARMOR)
+			UI_CreateMinimapBlip(backup_targetlocation, 10, BT_CombatPing)
+			if World_GetRand(1, 2) == 1 then
+				Cmd_Move(sg_backup1, backup_targetlocation)
+			else
+				Cmd_AttackMove(sg_backup1, backup_targetlocation)
+			end
+			Cmd_AttackMove(sg_backup1, backup1, true)
+		end
+		
+		if not SGroup_IsEmpty(sg_backup2) then
+			Cmd_AttackMove(sg_backup2, backup_targetlocation)
+			Cmd_AttackMove(sg_backup2, backup2, true)
+		end
+		
+		if not SGroup_IsEmpty(sg_backup3) then
+			Cmd_AttackMove(sg_backup3, backup_targetlocation)
+			Cmd_AttackMove(sg_backup3, backup2, true)
+		end
+		
+		Rule_AddOneShot(reset_backup, 241)
+	end
+end
+
+function reset_backup()
+	backup_state = nil
+	Rule_RemoveMe()
+end
+
+function Mission_SetupEnemyBuildings()
+	-- egroup = egroup name
+	-- mkr = spawn location marker table
+	-- ebp = blueprint table
+	-- *vulnerability = vulnerability modifier scalefactor
+	-- *damage = weapon damage modifier scalefactor
+	-- *range = weapon range modifier scalefactor
+	-- *cooldown = weapon cooldown modifier scalefactor
+	
+	JOINTOPS_ENEMY_BUILDINGS =
+	{
+		-- bunkers
+		{egroup = "eg_bunker", mkr = {bunker1, bunker2}, damage = 1.5, ebp = {EBP.AXIS.BUNKER}},
+		{egroup = "eg_bunker2", mkr = {bunker3, bunker4}, damage = 1.5, ebp = {EBP.AXIS.BUNKER}},
+		{egroup = "eg_bunker3", mkr = {bunker5, bunker6}, damage = 1.5, ebp = {EBP.AXIS.BUNKER}},
+		{egroup = "eg_bunker4", mkr = {bunker7, bunker8}, damage = 1.5, ebp = {EBP.AXIS.BUNKER}},
+		{egroup = "eg_rbunker1", mkr = {rbunker1}, ebp = {EBP.AXIS.BUNKER}},
+		{egroup = "eg_rbunker2", mkr = {rbunker2}, ebp = {EBP.AXIS.BUNKER}},
+		{egroup = "eg_mbunker1", mkr = {mbunker1}, ebp = {EBP.AXIS.BUNKER}},
+		
+		-- mines
+		{egroup = "eg_mines1", radius = 20, count = 5, mkr = {mines1, mines2}, ebp = {EBP.AXIS.MINES}},
+		{egroup = "eg_mines2", radius = 20, count = 5, mkr = {mines3, mines4}, ebp = {EBP.AXIS.MINES}},
+		{egroup = "eg_mines3", radius = 20, count = 5, mkr = {mines5, mines6}, ebp = {EBP.AXIS.MINES}},
+		{egroup = "eg_mines4", radius = 20, count = 5, mkr = {mines7, mines8}, ebp = {EBP.AXIS.MINES}},
+		{egroup = "eg_mines5", radius = 20, count = 5, mkr = {mines9, mines10}, ebp = {EBP.AXIS.MINES}},
+		
+		-- pickups
+		{egroup = "eg_pickup1", mkr = {pickup1, pickup2, pickup3}, ebp = {EBP.PICKUP.MUNITIONS}},
+		{egroup = "eg_pickup2", mkr = {pickup4, pickup5, pickup6}, ebp = {EBP.PICKUP.MUNITIONS}},
+		{egroup = "eg_pickup3", mkr = {weapon1, weapon2, weapon3}, ebp = {EBP.PICKUP.ALLIES.BAR}},
+		{egroup = "eg_pickup4", mkr = {weapon4, weapon5, weapon6}, ebp = {EBP.PICKUP.ALLIES.BAR}},
+		{egroup = "eg_pickup5", mkr = {weapon7}, ebp = {EBP.PICKUP.ALLIES.BAZOOKA}},
+		{egroup = "eg_pickup6", mkr = {pickup7, pickup8}, ebp = {EBP.PICKUP.MUNITIONS}},
+		{egroup = "eg_pickup7", mkr = {pickup9, pickup10}, ebp = {EBP.PICKUP.MUNITIONS}},
+		{egroup = "eg_pickup8", mkr = {pickup11, pickup12}, ebp = {EBP.PICKUP.MUNITIONS}},
+		{egroup = "eg_pickup9", mkr = {pickup13}, ebp = {EBP.PICKUP.AXIS.LMG_44, EBP.PICKUP.AXIS.LMG_42, EBP.PICKUP.AXIS.PANZERSCHRECK}},
+		{egroup = "eg_pickup10", mkr = {pickup14}, ebp = {EBP.PICKUP.AXIS.LMG_44, EBP.PICKUP.AXIS.LMG_42, EBP.PICKUP.AXIS.PANZERSCHRECK}},
+		{egroup = "eg_pickup11", mkr = {pickup15}, ebp = {EBP.PICKUP.AXIS.LMG_44, EBP.PICKUP.AXIS.LMG_42, EBP.PICKUP.AXIS.PANZERSCHRECK}},
+		{egroup = "eg_pickup12", mkr = {pickup16}, ebp = {EBP.PICKUP.AXIS.LMG_44, EBP.PICKUP.AXIS.LMG_42, EBP.PICKUP.AXIS.PANZERSCHRECK}},
+		{egroup = "eg_pickup13", mkr = {pickup17}, ebp = {EBP.PICKUP.AXIS.LMG_44, EBP.PICKUP.AXIS.LMG_42, EBP.PICKUP.AXIS.PANZERSCHRECK}},
+		{egroup = "eg_pickup14", mkr = {pickup18}, ebp = {EBP.PICKUP.MUNITIONS}},
+		{egroup = "eg_pickup15", mkr = {pickup19}, ebp = {EBP.PICKUP.MUNITIONS}},
+		{egroup = "eg_pickup16", mkr = {pickup20}, ebp = {EBP.PICKUP.MUNITIONS}},
+		{egroup = "eg_pickup17", mkr = {pickup21}, ebp = {EBP.PICKUP.MUNITIONS}},
+		{egroup = "eg_pickup19", mkr = {pickup23}, ebp = {EBP.PICKUP.MUNITIONS}},
+		{egroup = "eg_pickup20", mkr = {pickup24}, ebp = {EBP.PICKUP.MUNITIONS}},
+		{egroup = "eg_pickup21", mkr = {pickup25}, ebp = {EBP.PICKUP.MUNITIONS}},
+		{egroup = "eg_pickup22", mkr = {pickup27}, ebp = {EBP.PICKUP.MUNITIONS}},
+	}
+	
+	JointOps_InitEnemyBuildingManager(AXIS)
+	
+	sg_aagun1 = SGroup_CreateIfNotFound("sg_aagun1")
+	sg_aagun2 = SGroup_CreateIfNotFound("sg_aagun2")
+	sg_aagun3 = SGroup_CreateIfNotFound("sg_aagun3")
+	sg_flak1 = SGroup_CreateIfNotFound("sg_flak1")
+	sg_flak2 = SGroup_CreateIfNotFound("sg_flak2")
+	
+	aarandom = World_GetRand(1, 2)
+	if aarandom == 1 then
+		Util_CreateSquadsAtMarker(AXIS, sg_aagun1, SBP.AXIS.AA_20MM, aagun1, 1)
+		Util_CreateSquadsAtMarker(AXIS, sg_aagun2, SBP.AXIS.AA_20MM, aagun3, 1)
+		Util_CreateSquadsAtMarker(AXIS, sg_aagun3, SBP.AXIS.AA_20MM, aagun5, 1)
+		Util_CreateSquadsAtMarker(AXIS, sg_flak1, SBP.AXIS.FLAK_88, flak1a, 1)
+		Util_CreateSquadsAtMarker(AXIS, sg_flak2, SBP.AXIS.FLAK_88, flak2a, 1)
+	else
+		Util_CreateSquadsAtMarker(AXIS, sg_aagun1, SBP.AXIS.AA_20MM, aagun2, 1)
+		Util_CreateSquadsAtMarker(AXIS, sg_aagun2, SBP.AXIS.AA_20MM, aagun4, 1)
+		Util_CreateSquadsAtMarker(AXIS, sg_aagun3, SBP.AXIS.AA_20MM, aagun6, 1)
+		Util_CreateSquadsAtMarker(AXIS, sg_flak1, SBP.AXIS.FLAK_88, flak1b, 1)
+		Util_CreateSquadsAtMarker(AXIS, sg_flak2, SBP.AXIS.FLAK_88, flak2b, 1)
+	end
+end
+
+function ObjectiveInit_bridges()
+	OBJECTIVE_BRIDGES =
+	{
+		SetupUI = function()
+			OBJECTIVE_BRIDGES.PingID = Objective_AddUIElements(OBJECTIVE_BRIDGES, eg_bridge_strat1, true, JointOps_Util_CreateLocString("Capture this point"), true, World_Pos(0,1.5,0))
+			OBJECTIVE_BRIDGES.PingID2 = Objective_AddUIElements(OBJECTIVE_BRIDGES, eg_bridge_strat2, true, JointOps_Util_CreateLocString("Capture this point"), true, World_Pos(0,1.5,0))
+		end,
+		
+		OnStart = function()
+			eg_bridge_strat1 = EGroup_CreateIfNotFound("eg_bridge_strat1")
+			eg_bridge_strat2 = EGroup_CreateIfNotFound("eg_bridge_strat2")
+			Rule_AddInterval(ObjectiveCheck_bridges, 5)
+		end,
+		
+		OnComplete = function()
+		end,
+		
+		IsComplete = function()
+			return false
+		end,
+		
+		OnFail = function()
+		end,
+		
+		Title = LOCSTRINGS.BRIDGES_TITLE,
+		Description = LOCSTRINGS.BRIDGES_TITLE,
+		DisplayTitleStart = LOCSTRINGS.BRIDGES_STARTMSG,
+		Icon = IT_P_Attack,
+		Type = OT_Primary,
+	}
+	
+	Objective_Register(OBJECTIVE_BRIDGES)
+end
+
+function ObjectiveCheck_bridges()
+	if EGroup_IsCapturedByPlayer(eg_bridge_strat1, player1, ANY) or EGroup_IsCapturedByPlayer(eg_bridge_strat1, player2, ANY) then
+		Objective_RemoveUIElements(OBJECTIVE_BRIDGES, OBJECTIVE_BRIDGES.PingID)
+		bridge1_taken = true
+	end
+	if EGroup_IsCapturedByPlayer(eg_bridge_strat2, player1, ANY) or EGroup_IsCapturedByPlayer(eg_bridge_strat2, player2, ANY) then
+		Objective_RemoveUIElements(OBJECTIVE_BRIDGES, OBJECTIVE_BRIDGES.PingID2)
+		bridge2_taken = true
+	end
+	if bridge1_taken and bridge2_taken then
+		Objective_Complete(OBJECTIVE_BRIDGES)
+		JointOps_AddEvent(900)
+		intel_bridges_sec()
+		Rule_AddOneShot(main_start, 5)
+		Rule_RemoveMe()
+	end
+end
+
+function start()
+	Start_Flares()
+	Start_Flares()
+	Mission_SetupEnemySquads()
+	Mission_SetupEnemyBuildings()
+	Rule_AddOneShot(setup_misc_stuff, 5)
+	ObjectiveInit_bridges()
+	Objective_Start(OBJECTIVE_BRIDGES, true)
+	Player_SetAbilityAvailability(player1, ABILITY.COMMANDER_TREE.ALLIES.RECRUIT_PARADROP, ITEM_UNLOCKED)
+	Player_SetAbilityAvailability(player2, ABILITY.COMMANDER_TREE.ALLIES.RECRUIT_PARADROP, ITEM_UNLOCKED)
+	UI_FlashAbilityButton(ABILITY.COMMANDER_TREE.ALLIES.RECRUIT_PARADROP, true, BT_UI_Strong_AbilityBtn)
+	Rule_AddOneShot(hint1, 8)
+	Rule_AddOneShot(intel_go, 12)
+end
+
+function hint1()
+	JointOps_Util_GlobalMessage(JointOps_Util_CreateLocString("French resistance has left us some weapons and ammo nearby to help us"), 3)
+end
+
+function hint2()
+	JointOps_Util_GlobalMessage(JointOps_Util_CreateLocString("Good job commander, now advance to the town center"), 3)
+end
+
+function hint3()
+	JointOps_Util_GlobalMessage(JointOps_Util_CreateLocString("You may now recruit new soldiers from our forward barracks."), 3)
+	if Player_GetID(Game_GetLocalPlayer()) == Player_GetID(player1) then
+		UI_CreateMinimapBlip(allies_fhq1, 10, BT_ObjectiveSecondary)
+		HintPoint_AddToEGroup(allies_fhq1, true, nothing, JointOps_Util_CreateLocString("Recruit new soldiers here"), true, World_Pos(0,1,0.1))
+	else
+		UI_CreateMinimapBlip(allies_fhq2, 10, BT_ObjectiveSecondary)
+		HintPoint_AddToEGroup(allies_fhq2, true, nothing, JointOps_Util_CreateLocString("Recruit new soldiers here"), true, World_Pos(0,1,0.1))
+	end
+end
+
+function hint4()
+	JointOps_Util_GlobalMessage(JointOps_Util_CreateLocString("New units available in our forward barracks"), 3)
+end
+
+function main_start()
+	intro_main()
+end
+
+function setup_misc_stuff()
+	eg_bunker = EGroup_CreateIfNotFound("eg_bunker")
+	eg_bunker2 = EGroup_CreateIfNotFound("eg_bunker2")
+	eg_bunker3 = EGroup_CreateIfNotFound("eg_bunker3")
+	eg_bunker4 = EGroup_CreateIfNotFound("eg_bunker4")
+	eg_rbunker1 = EGroup_CreateIfNotFound("eg_rbunker1")
+	eg_rbunker2 = EGroup_CreateIfNotFound("eg_rbunker2")
+	eg_mbunker1 = EGroup_CreateIfNotFound("eg_mbunker1")
+	Cmd_InstantUpgrade(eg_rbunker1, UPG.AXIS.BUNKER_REPAIR)
+	-- Cmd_InstantUpgrade(eg_rbunker2, UPG.AXIS.BUNKER_REPAIR)
+	Cmd_InstantUpgrade(eg_mbunker1, UPG.AXIS.BUNKER_MED)
+	Cmd_InstantUpgrade(eg_bunker, UPG.AXIS.BUNKER_MG42)
+	Cmd_InstantUpgrade(eg_bunker2, UPG.AXIS.BUNKER_MG42)
+	Cmd_InstantUpgrade(eg_bunker3, UPG.AXIS.BUNKER_MG42)
+	Cmd_InstantUpgrade(eg_bunker4, UPG.AXIS.BUNKER_MG42)
+end
+
+function Mission_WeaponDelivery()
+	if state_weapons == nil then
+		state_weapons = 1
+		sg_wpntruck = SGroup_CreateIfNotFound("sg_wpntruck")
+		Util_CreateSquadsAtMarker(ALLIES, sg_wpntruck, SBP.ALLIES.TRUCK, spn_south1, 1)
+		Entity_SetAnimatorState(Squad_EntityAt(SGroup_GetSpawnedSquadAt(sg_wpntruck, 1), 0), "set_random_supplies", "canopy")
+		truck_blip = UI_CreateMinimapBlip(sg_wpntruck, -1, BT_ObjectiveMedal)
+		EventCue_Create(CUE.NORMAL, LOCSTRINGS.WEAPONS, LOCSTRINGS.WEAPONS, sg_wpntruck)
+		Modify_UnitSpeed(sg_wpntruck, 0.4)
+		Cmd_Move(sg_wpntruck, mkr_sroad1, true)
+		Cmd_Move(sg_wpntruck, mkr_sroad2, true)
+		Cmd_Move(sg_wpntruck, sroad3, true)
+		Cmd_Move(sg_wpntruck, mkr_weapon, true)
+		Rule_RemoveMe()
+		Rule_AddInterval(Mission_WeaponDelivery, 1)
+	elseif SGroup_IsEmpty(sg_wpntruck) then
+		state_weapons = nil
+		Rule_RemoveMe()
+		Rule_AddOneShot(Mission_WeaponDelivery, World_GetRand(2, 5) * 60)
+		return
+	elseif not SGroup_IsMoving(sg_wpntruck, ALL) and Prox_AreSquadsNearMarker(sg_wpntruck, mkr_weapon, false, 5) then
+		UI_DeleteMinimapBlip(truck_blip)
+		UI_CreateMinimapBlip(sg_wpntruck, 4, BT_ObjectiveMedal)
+		local eg_weapons = EGroup_CreateIfNotFound("eg_weapons")
+		WEAPONS_DELIVERY = {EBP.PICKUP.ALLIES.BAZOOKA, BP_GetEntityBlueprint("ebps/gameplay/props/commonwealth_bren_item.lua"), BP_GetEntityBlueprint("ebps/gameplay/props/commonwealth_piat_item.lua"), EBP.PICKUP.ALLIES.BAR}
+		for i = 1, World_GetRand(2, 4) do Util_CreateEntities(ALLIES, eg_weapons, WEAPONS_DELIVERY[World_GetRand(1, table.getn(WEAPONS_DELIVERY))], Marker_FromName("mkr_wpn" .. i, "magenta_marker"), 1) end
+		Cmd_Move(sg_wpntruck, sroad4, true)
+		Cmd_Move(sg_wpntruck, spn_south4, true)
+	elseif Prox_AreSquadsNearMarker(sg_wpntruck, spn_south4, false, 5) then
+		SGroup_DestroyAllSquads(sg_wpntruck)
+		state_weapons = nil
+		Rule_RemoveMe()
+		Rule_AddOneShot(Mission_WeaponDelivery, World_GetRand(7, 10) * 62)
+		return
+	end
+	
+	state_weapons = state_weapons + 1
+end
+
+function Ht_drop()
+	if state_htdrop == nil then
+		state_htdrop = 1
+		ht_drop_count = ht_drop_count + 1
+		Sound_Play2D(SOUNDS.REINFORCEMENTS)
+		if ht_drop_count == 1 then
+			ht_drop_troops = {SBP.ALLIES.RIFLEMEN, SBP.ALLIES.RANGER}
+			ht_drop_support = {SBP.ALLIES.HEAVYMG}
+		elseif ht_drop_count == 2 then
+			ht_drop_troops = {SBP.ALLIES.RIFLEMEN, SBP.ALLIES.RANGER}
+			ht_drop_support = {SBP.ALLIES.SNIPER}
+		elseif ht_drop_count == 4 then
+			ht_drop_troops = {SBP.ALLIES.RIFLEMEN, SBP.ALLIES.RANGER}
+			ht_drop_support = {SBP.ALLIES.ENGINEER}
+		elseif ht_drop_count == 5 then
+			ht_drop_troops = {SBP.ALLIES.RIFLEMEN, SBP.ALLIES.RANGER}
+			ht_drop_support = {SBP.ALLIES.MORTAR}
+		elseif ht_drop_count == 6 then
+			ht_drop_troops = {SBP.ALLIES.RIFLEMEN, SBP.ALLIES.RANGER, SBP.ALLIES.PARATROOPER}
+			ht_drop_support = {SBP.ALLIES.SNIPER, SBP.ALLIES.HEAVYMG, SBP.ALLIES.MORTAR}
+		end
+		sg_htdrop_ht1 = SGroup_CreateIfNotFound("sg_htdrop_ht1")
+		sg_htdrop_ht2 = SGroup_CreateIfNotFound("sg_htdrop_ht2")
+		sg_htdrop_troops1 = SGroup_CreateIfNotFound("sg_htdrop_troops1")
+		sg_htdrop_troops2 = SGroup_CreateIfNotFound("sg_htdrop_troops2")
+		Util_CreateSquadsAtMarker(ALLIES, sg_htdrop_ht1, SBP.ALLIES.HALFTRACK, spn_south1)
+		Modify_UnitSpeed(sg_htdrop_ht1, 0.5)
+		Util_CreateSquadsAndGarrison(ALLIES, sg_htdrop_troops1, ht_drop_troops[World_GetRand(1, table.getn(ht_drop_troops))], sg_htdrop_ht1, 1)
+		Util_CreateSquadsAndGarrison(ALLIES, sg_htdrop_troops1, ht_drop_support[World_GetRand(1, table.getn(ht_drop_support))], sg_htdrop_ht1, 1)
+		truck_blip_ht = UI_CreateMinimapBlip(sg_htdrop_ht1, -1, BT_ObjectiveMedal)
+		EventCue_Create(CUE.NORMAL, LOCSTRINGS.HTDROP, LOCSTRINGS.HTDROP, sg_htdrop_ht1)
+		Cmd_Ungarrison(sg_htdrop_ht1, Util_GetPosition(mkr_htdrop1))
+		Rule_RemoveMe()
+		Rule_AddInterval(Ht_drop, 1)
+	elseif state_htdrop == 5 then
+		Util_CreateSquadsAtMarker(ALLIES, sg_htdrop_ht2, SBP.ALLIES.HALFTRACK, spn_south1)
+		Modify_UnitSpeed(sg_htdrop_ht2, 0.5)
+		Util_CreateSquadsAndGarrison(ALLIES, sg_htdrop_troops2, ht_drop_troops[World_GetRand(1, table.getn(ht_drop_troops))], sg_htdrop_ht2, 1)
+		Util_CreateSquadsAndGarrison(ALLIES, sg_htdrop_troops2, ht_drop_support[World_GetRand(1, table.getn(ht_drop_support))], sg_htdrop_ht2, 1)
+		Cmd_Ungarrison(sg_htdrop_ht2, Util_GetPosition(mkr_htdrop2))
+	elseif not SGroup_IsEmpty(sg_htdrop_ht1) and not SGroup_IsHoldingAny(sg_htdrop_ht1) then
+		UI_DeleteMinimapBlip(truck_blip_ht)
+		Cmd_Move(sg_htdrop_ht1, spn_south5, true)
+		if MULTIPLAYER then
+			SGroup_SetPlayerOwner(sg_htdrop_troops1, player1)
+		else
+			SGroup_SetPlayerOwner(sg_htdrop_troops1, player1)
+			if AI_IsAIPlayer(World_GetPlayerAt(1)) then
+				SGroup_SetPlayerOwner(sg_htdrop_troops1, player2)
+			end
+		end
+		
+		if Prox_AreSquadsNearMarker(sg_htdrop_ht1, spn_south5, false, 5) then
+			SGroup_DestroyAllSquads(sg_htdrop_ht1)
+		end
+	elseif not SGroup_IsEmpty(sg_htdrop_ht2) and not SGroup_IsHoldingAny(sg_htdrop_ht2) then
+		Cmd_Move(sg_htdrop_ht2, spn_south5, true)
+		if MULTIPLAYER then
+			SGroup_SetPlayerOwner(sg_htdrop_troops2, player2)
+		else
+			SGroup_SetPlayerOwner(sg_htdrop_troops2, player1)
+			if AI_IsAIPlayer(World_GetPlayerAt(1)) then
+				SGroup_SetPlayerOwner(sg_htdrop_troops2, player2)
+			end
+		end
+		
+		if Prox_AreSquadsNearMarker(sg_htdrop_ht2, spn_south5, false, 5) then
+			SGroup_DestroyAllSquads(sg_htdrop_ht2)
+		end
+	elseif SGroup_IsEmpty(sg_htdrop_ht1) and SGroup_IsEmpty(sg_htdrop_ht2) then
+		state_htdrop = nil
+		Rule_RemoveMe()
+		Rule_AddOneShot(Ht_drop, World_GetRand(8, 10) * 58)
+		return
+	end
+	
+	state_htdrop = state_htdrop + 1
+end
+
+function Ambient_Allies_Attack()
+	AMBIENT_INF_LIMIT = World_GetRand(4, 8)
+	
+	for i = 1, AMBIENT_INF_LIMIT do
+		local sg_temp = SGroup_CreateIfNotFound("sg_amb_inf" .. i)
+		
+		if SGroup_IsEmpty(sg_temp) then
+			local spawn = Marker_FromName("spn_south" .. World_GetRand(1, 5), "blue_marker")
+			SQUADS_AMB_INF[i] = ambient_squads[World_GetRand(1, table.getn(ambient_squads))]
+			Util_CreateSquadsAtMarker(ALLIES, sg_temp, SQUADS_AMB_INF[i], spawn, 1)
+			Modify_Vulnerability(sg_temp, 2.5)
+			Modify_WeaponDamage(sg_temp, "hardpoint_01", 0.05)
+			Modify_ReceivedSuppression(sg_temp, 10)
+			
+			path = World_GetRand(1, 4)
+			
+			if path == 1 then
+				Cmd_AttackMove(sg_temp, mkr_wp1, true)
+				Cmd_AttackMove(sg_temp, mkr_wp1a, true)
+				Cmd_AttackMove(sg_temp, mkr_wp1c, true)
+				Cmd_AttackMove(sg_temp, mkr_wp_center, true)
+			elseif path == 2 then
+				Cmd_AttackMove(sg_temp, mkr_wp2, true)
+				Cmd_AttackMove(sg_temp, mkr_wp2a, true)
+				Cmd_AttackMove(sg_temp, mkr_wp2b, true)
+				Cmd_AttackMove(sg_temp, mkr_wp_center, true)
+			elseif path == 3 then
+				Cmd_AttackMove(sg_temp, mkr_wp3, true)
+				Cmd_AttackMove(sg_temp, mkr_wp3a, true)
+				Cmd_AttackMove(sg_temp, mkr_wp3b, true)
+				Cmd_AttackMove(sg_temp, mkr_wp_center, true)
+			elseif path == 4 then
+				Cmd_AttackMove(sg_temp, mkr_wp4, true)
+				Cmd_AttackMove(sg_temp, mkr_wp4a, true)
+				Cmd_AttackMove(sg_temp, mkr_wp4b, true)
+				Cmd_AttackMove(sg_temp, mkr_wp_center, true)
+			end
+		end
+	end
+	
+	Rule_RemoveMe()
+	Rule_AddOneShot(Ambient_Allies_Attack, World_GetRand(10, 30))
+	return
+end
+
+function Util_SpawnEnemyInfantryAtMarker(sgroupid, markerid, squadtype)
+	if squadtype == "basic" then
+		squadtype = types_attack[World_GetRand(1, table.getn(types_attack))]
+	end
+	
+	Util_CreateSquadsAtMarker(AXIS, sgroupid, squadtype, markerid, 1)
+	
+	if squadtype == SBP.AXIS.SNIPER then Cmd_Ability(sgroupid, BP_GetAbilityBlueprint("abilities/camouflage_toggled_sniper.lua")) end
+	
+	if squadtype == SBP.AXIS.VOLKSGRENADIER then
+		Cmd_Upgrade(sgroupid, BP_GetUpgradeBlueprint("upgrade/axis/items/axis_squad_item_volksgrenadier_smg.lua"), 1, true)
+	end
+	
+	if squadtype == SBP.AXIS.GRENADIER then
+		Cmd_Upgrade(sgroupid, BP_GetUpgradeBlueprint("upgrade/axis/items/axis_squad_item_mg42.lua"), 1, true)
+	end
+	
+	if squadtype == SBP.AXIS.GRENADIER then
+		Cmd_Upgrade(sgroupid, BP_GetUpgradeBlueprint("upgrade/axis/items/axis_squad_item_panzerschreck.lua"), 1, true)
+	end
+	
+	if squadtype == SBP.AXIS.PIONEER then
+		Cmd_Upgrade(sgroupid, UPG.AXIS.PIONEER_FLAMETHROWER, 1, true)
+	end
+	
+	if squadtype == SBP.AXIS.STORMTROOPER then
+		Cmd_Upgrade(sgroupid, BP_GetUpgradeBlueprint("upgrade/axis/items/axis_squad_item_mg42.lua"), 1, true)
+		Cmd_Upgrade(sgroupid, BP_GetUpgradeBlueprint("upgrade/axis/items/axis_squad_item_mp44.lua"), 1, true)
+	end
+	
+	if squadtype == SBP.AXIS.GRENADIER or squadtype == SBP.AXIS.VOLKSGRENADIER or squadtype == SBP.AXIS.STORMTROOPER or squadtype == SBP.AXIS.KNIGHTSCROSS then
+		SGroup_IncreaseVeterancyRank(sgroupid, World_GetRand(min_vet_inf, max_vet_inf), true)
+	end
+	
+	return squadtype
+end
+
+function InfantryAttackForces()
+	arrow = 0
+	Sound_Play2D(SOUNDS.ATTACK)
+	if attack_state == nil then
+		attack_state = 1
+		maxsquads_inf = 3
+		min_vet_inf = 1
+		max_vet_inf = 1
+		types_attack = {SBP.AXIS.STORMTROOPER, SBP.AXIS.VOLKSGRENADIER, SBP.AXIS.PIONEER}
+	elseif attack_state == 3 then
+		types_attack = {SBP.AXIS.GRENADIER, SBP.AXIS.VOLKSGRENADIER, SBP.AXIS.KNIGHTSCROSS, SBP.AXIS.STORMTROOPER, SBP.AXIS.PIONEER}
+	elseif attack_state == 5 then
+		maxsquads_inf = 4
+		min_vet_inf = 1
+		max_vet_inf = 2
+	elseif attack_state == 10 then
+		types_attack = {SBP.AXIS.GRENADIER, SBP.AXIS.KNIGHTSCROSS, SBP.AXIS.STORMTROOPER, SBP.AXIS.SNIPER, SBP.ELITE.TANKBUSTERS, SBP.AXIS.PIONEER}
+		maxsquads_inf = 5
+		min_vet_inf = 2
+		max_vet_inf = 3
+	elseif attack_state == 15 then
+		types_attack = {SBP.AXIS.GRENADIER, SBP.AXIS.KNIGHTSCROSS, SBP.AXIS.STORMTROOPER, SBP.AXIS.SNIPER, SBP.ELITE.TANKBUSTERS, SBP.AXIS.MORTAR, SBP.AXIS.PIONEER}
+		maxsquads_inf = 6
+	elseif attack_state == 29 then
+		maxsquads_inf = 7
+		min_vet_inf = 3
+	elseif attack_state >= 40 then
+		maxsquads_inf = maxsquads_inf + 1
+	end
+	
+	if World_GetRand(1, 2) == 1 then
+		EGroup_SetAnimatorEvent(eg_flares_b1a, "flare_fire_00")
+		EGroup_SetAnimatorEvent(eg_flares_b1b, "flare_fire_00")
+		EGroup_SetAnimatorEvent(eg_flares_b1c, "flare_fire_00")
+		posi = World_GetRand(1, 4)
+		attack1 = Util_GetPosition(Marker_FromName("att1", "red_marker"))
+		attack2 = Util_GetPosition(Marker_FromName("att2", "red_marker"))
+		attack3 = Util_GetPosition(Marker_FromName("att3", "red_marker"))
+		attack4 = Util_GetPosition(Marker_FromName("att6", "red_marker"))
+		capture1 = EGroup_CreateIfNotFound("eg_bridge_strat1")
+		capture2 = EGroup_CreateIfNotFound("eg_bridge_strat2")
+	else
+		EGroup_SetAnimatorEvent(eg_flares_b2a, "flare_fire_00")
+		EGroup_SetAnimatorEvent(eg_flares_b2b, "flare_fire_00")
+		EGroup_SetAnimatorEvent(eg_flares_b2c, "flare_fire_00")
+		posi = World_GetRand(1, 4)
+		attack1 = Util_GetPosition(Marker_FromName("att4", "red_marker"))
+		attack2 = Util_GetPosition(Marker_FromName("att5", "red_marker"))
+		attack3 = Util_GetPosition(Marker_FromName("att6", "red_marker"))
+		attack4 = Util_GetPosition(Marker_FromName("att1", "red_marker"))
+		capture1 = EGroup_CreateIfNotFound("eg_bridge_strat2")
+		capture2 = EGroup_CreateIfNotFound("eg_bridge_strat1")
+	end
+	
+	for i = 1, maxsquads_inf do
+		local sg_temp = SGroup_CreateIfNotFound("sg_infantry" .. i)
+		if SGroup_IsEmpty(sg_temp) then
+			SG_INFANTRY_INFO[i].sbp = Util_SpawnEnemyInfantryAtMarker(sg_temp, Marker_FromName("att_spn" .. posi, "blue_marker"), "basic")
+			Cmd_AttackMove(sg_temp, attack1, true)
+			
+			if arrow == 0 then
+				ThreatArrow_CreateGroup(sg_temp)
+				arrow = 1
+				UI_CreateMinimapBlip(sg_temp, 10, BT_CombatPing)
+			end
+			if World_GetRand(1, 2) == 1 then
+				Cmd_AttackMove(sg_temp, attack2, true)
+			else
+				Cmd_Move(sg_temp, attack2, true)
+			end
+			Cmd_AttackMove(sg_temp, attack3, true)
+			if not EGroup_IsCapturedByPlayer(capture1, AXIS, ALL) then
+				Cmd_Move(sg_temp, Util_GetPosition(capture1), true)
+				Command_SquadEntity(AXIS, sg_temp, SCMD_Capture, capture1, true)
+				Cmd_AttackMove(sg_temp, attack4, true)
+				Cmd_Move(sg_temp, Util_GetPosition(capture2), true)
+				Command_SquadEntity(AXIS, sg_temp, SCMD_Capture, capture2, true)
+			else
+				Cmd_AttackMove(sg_temp, attack4, true)
+				if not EGroup_IsCapturedByPlayer(capture2, AXIS, ALL) then
+					Cmd_Move(sg_temp, Util_GetPosition(capture2), false)
+					Command_SquadEntity(AXIS, sg_temp, SCMD_Capture, capture2, true)
+				end
+			end
+		end
+	end
+	
+	attack_state = attack_state + 1
+	Rule_RemoveMe()
+	Rule_AddOneShot(InfantryAttackForces, World_GetRand(5, 8) * 61)
+	return
+end
+
+function ObjectiveInit_FHQ()
+	OBJECTIVE_FHQ =
+	{
+		SetupUI = function()
+			OBJECTIVE_FHQ.PingID = UI_CreateMinimapBlip(eg_axis_fhq1, -1, BT_ObjectivePrimary)
+			OBJECTIVE_FHQ.PingID2 = UI_CreateMinimapBlip(eg_axis_fhq2, -1, BT_ObjectivePrimary)
+			OBJECTIVE_FHQ.PingID3 = UI_CreateMinimapBlip(eg_axis_fhq3, -1, BT_ObjectivePrimary)
+		end,
+		
+		OnStart = function()
+			Rule_AddInterval(ObjectiveCheck_FHQ, 5)
+			hint_1 = HintPoint_AddToEGroup(eg_axis_fhq1, true, nothing, JointOps_Util_CreateLocString("Uncap or destroy this building"), true, World_Pos(0,1,0.1))
+			hint_2 = HintPoint_AddToEGroup(eg_axis_fhq2, true, nothing, JointOps_Util_CreateLocString("Uncap or destroy this building"), true, World_Pos(0,1,0.1))
+			hint_3 = HintPoint_AddToEGroup(eg_axis_fhq3, true, nothing, JointOps_Util_CreateLocString("Uncap or destroy this building"), true, World_Pos(0,1,0.1))
+		end,
+		
+		OnComplete = function()
+		end,
+		
+		IsComplete = function()
+			return false
+		end,
+		
+		OnFail = function()
+		end,
+		
+		Title = LOCSTRINGS.FHQ_TITLE,
+		Description = LOCSTRINGS.FHQ_TITLE,
+		DisplayTitleStart = LOCSTRINGS.FHQ_STARTMSG,
+		Icon = IT_P_Attack,
+		Type = OT_Secondary,
+	}
+	
+	Objective_Register(OBJECTIVE_FHQ)
+end
+
+function ObjectiveCheck_FHQ()
+	if not EGroup_HasUpgrade(eg_axis_fhq1, UPG.ELITE.CONVERT_AMBIENT_BUILDING, ANY) or EGroup_IsEmpty(eg_axis_fhq1) then
+		UI_DeleteMinimapBlip(OBJECTIVE_FHQ.PingID)
+		HintPoint_Remove(hint_1)
+		FHQ1 = 1
+	end
+	
+	if not EGroup_HasUpgrade(eg_axis_fhq2, UPG.ELITE.CONVERT_AMBIENT_BUILDING, ANY) or EGroup_IsEmpty(eg_axis_fhq2) then
+		UI_DeleteMinimapBlip(OBJECTIVE_FHQ.PingID2)
+		HintPoint_Remove(hint_2)
+		FHQ2 = 1
+	end
+	
+	if not EGroup_HasUpgrade(eg_axis_fhq3, UPG.ELITE.CONVERT_AMBIENT_BUILDING, ANY) or EGroup_IsEmpty(eg_axis_fhq3) then
+		UI_DeleteMinimapBlip(OBJECTIVE_FHQ.PingID3)
+		HintPoint_Remove(hint_3)
+		FHQ3 = 1
+	end
+	
+	if FHQ1 == 1 and FHQ2 == 1 and FHQ3 == 1 then
+		Objective_Complete(OBJECTIVE_FHQ)
+		JointOps_AddEvent(901)
+		Rule_AddOneShot(intro_aa_start, 5)
+		intel_excellent()
+		Cmd_Upgrade(player1, UPG.COMMANDER_TREE.ALLIES.INFANTRY_01, 1, true)
+		Cmd_Upgrade(player2, UPG.COMMANDER_TREE.ALLIES.INFANTRY_01, 1, true)
+		Player_SetAbilityAvailability(player1, ABILITY.COMMANDER_TREE.ALLIES.RECRUIT_RANGERS, ITEM_UNLOCKED)
+		Player_SetAbilityAvailability(player2, ABILITY.COMMANDER_TREE.ALLIES.RECRUIT_RANGERS, ITEM_UNLOCKED)
+		Player_SetSquadProductionAvailability(player1, SBP.ALLIES.HEAVYMG, ITEM_UNLOCKED)
+		Player_SetSquadProductionAvailability(player2, SBP.ALLIES.HEAVYMG, ITEM_UNLOCKED)
+		Rule_RemoveMe()
+	end
+end
+
+function ObjectiveInit_main()
+	OBJECTIVE_MAIN =
+	{
+		SetupUI = function()
+			OBJECTIVE_MAIN.PingID = UI_CreateMinimapBlip(axis_main_base, -1, BT_ObjectivePrimary)
+			OBJECTIVE_MAIN.PingID2 = UI_CreateMinimapBlip(eg_bridge_strat1, -1, BT_ObjectiveSecondary)
+			OBJECTIVE_MAIN.PingID3 = UI_CreateMinimapBlip(eg_bridge_strat2, -1, BT_ObjectiveSecondary)
+		end,
+		
+		OnStart = function()
+			sg_officer1 = SGroup_CreateIfNotFound("sg_officer1")
+			sg_officer2 = SGroup_CreateIfNotFound("sg_officer2")
+			sg_officer3 = SGroup_CreateIfNotFound("sg_officer3")
+			hint_10 = HintPoint_AddToEGroup(axis_main_base, true, nothing, JointOps_Util_CreateLocString("Uncap or destroy this building"), true, World_Pos(0,1,0.1))
+			hint_11 = HintPoint_AddToEGroup(eg_house_back1, true, nothing, JointOps_Util_CreateLocString("Kill the officer"), true, World_Pos(0,1,0.1))
+			hint_12 = HintPoint_AddToEGroup(eg_house_back2, true, nothing, JointOps_Util_CreateLocString("Kill the officer"), true, World_Pos(0,1,0.1))
+			hint_13 = HintPoint_AddToEGroup(eg_hq2, true, nothing, JointOps_Util_CreateLocString("Kill the officer"), true, World_Pos(0,1,0.1))
+			hint_14 = HintPoint_AddToEGroup(eg_bridge_strat1, true, nothing, JointOps_Util_CreateLocString("Defend this point"), true, World_Pos(0,1.5,0))
+			hint_15 = HintPoint_AddToEGroup(eg_bridge_strat2, true, nothing, JointOps_Util_CreateLocString("Defend this point"), true, World_Pos(0,1.5,0))
+			Rule_AddInterval(ObjectiveCheck_main, 5)
+			
+		end,
+		
+		OnComplete = function()
+		end,
+		
+		IsComplete = function()
+			return false
+		end,
+		
+		OnFail = function()
+		end,
+		
+		Title = LOCSTRINGS.MAIN_TITLE,
+		Description = LOCSTRINGS.MAIN_TITLE,
+		DisplayTitleStart = LOCSTRINGS.MAIN_STARTMSG,
+		Icon = IT_P_Attack,
+		Type = OT_Primary,
+	}
+	
+	Objective_Register(OBJECTIVE_MAIN)
+end
+
+function ObjectiveCheck_main()
+	if EGroup_IsCapturedByPlayer(eg_bridge_strat1, AXIS, ANY) and EGroup_IsCapturedByPlayer(eg_bridge_strat2, AXIS, ANY) then
+		Objective_Fail(OBJECTIVE_MAIN)
+		JointOps_AddEvent(902)
+		HintPoint_Remove(hint_14)
+		HintPoint_Remove(hint_15)
+		UI_DeleteMinimapBlip(OBJECTIVE_MAIN.PingID)
+		UI_DeleteMinimapBlip(OBJECTIVE_MAIN.PingID2)
+		UI_DeleteMinimapBlip(OBJECTIVE_MAIN.PingID3)
+		Game_Letterbox(true, 0)
+		Sound_PlayMusic("music/panzer_theme.bsc", 0, 0)
+		Sound_SetVolume("Speech", 0.0, 1.5)
+		Sound_SetVolume("Ambient", 0.0, 1.5)
+		Sound_SetVolume("SFXmaster", 0.0, 1.5)
+		FOW_RevealAll()
+		Camera_AutoRotate(Util_GetPosition(capture2), 40, 25, 1)
+		JointOps_Util_GlobalMessage(LOCSTRINGS.LOSE, 5)
+		Rule_AddOneShot(stats, 5)
+		Rule_AddOneShot(Util_EndGame, 30)
+		WINNER = Player_GetTeam(AXIS)
+		Rule_RemoveMe()
+	end
+	
+	if not EGroup_HasUpgrade(axis_main_base, UPG.ELITE.CONVERT_AMBIENT_BUILDING, ANY) or EGroup_IsEmpty(axis_main_base) then
+		main_base_captured = true
+		HintPoint_Remove(hint_10)
+		Sound_Play2D(SOUNDS.WIN)
+	end
+	
+	if SGroup_IsEmpty(sg_officer1) then
+		HintPoint_Remove(hint_13)
+	end
+	
+	if SGroup_IsEmpty(sg_officer2) then
+		HintPoint_Remove(hint_11)
+	end
+	
+	if SGroup_IsEmpty(sg_officer3) then
+		HintPoint_Remove(hint_12)
+	end
+	
+	if main_base_captured == false and panzer == 0 then
+		if SGroup_IsEmpty(sg_officer1) and SGroup_IsEmpty(sg_officer2) and SGroup_IsEmpty(sg_officer3) then
+			Rule_AddOneShot(panzergruppe, 5)
+			panzer = 1
+		end
+	end
+	
+	if main_base_captured == true then
+		if SGroup_IsEmpty(sg_officer1) and SGroup_IsEmpty(sg_officer2) and SGroup_IsEmpty(sg_officer3) then
+			Objective_Complete(OBJECTIVE_MAIN)
+			JointOps_AddEvent(903)
+			UI_DeleteMinimapBlip(OBJECTIVE_MAIN.PingID)
+			UI_DeleteMinimapBlip(OBJECTIVE_MAIN.PingID2)
+			UI_DeleteMinimapBlip(OBJECTIVE_MAIN.PingID3)
+			OutroWin()
+			Rule_RemoveMe()
+		end
+	end
+end
+
+function ObjectiveInit_aa()
+	OBJECTIVE_AA =
+	{
+		SetupUI = function()
+			OBJECTIVE_AA.PingID = UI_CreateMinimapBlip(sg_aagun1, -1, BT_ObjectiveSecondary)
+			OBJECTIVE_AA.PingID2 = UI_CreateMinimapBlip(sg_aagun2, -1, BT_ObjectiveSecondary)
+			OBJECTIVE_AA.PingID3 = UI_CreateMinimapBlip(sg_aagun3, -1, BT_ObjectiveSecondary)
+		end,
+		
+		OnStart = function()
+			Rule_AddInterval(ObjectiveCheck_aa, 5)
+		end,
+		
+		OnComplete = function()
+		end,
+		
+		IsComplete = function()
+			return false
+		end,
+		
+		OnFail = function()
+		end,
+		
+		Title = LOCSTRINGS.AA_TITLE,
+		Description = LOCSTRINGS.AA_TITLE,
+		DisplayTitleStart = LOCSTRINGS.AA_STARTMSG,
+		Icon = IT_P_Attack,
+		Type = OT_Secondary,
+	}
+	
+	Objective_Register(OBJECTIVE_AA)
+end
+
+function ObjectiveCheck_aa()
+	if SGroup_IsEmpty(sg_aagun1) then
+		UI_DeleteMinimapBlip(OBJECTIVE_AA.PingID)
+	end
+	
+	if SGroup_IsEmpty(sg_aagun2) then
+		UI_DeleteMinimapBlip(OBJECTIVE_AA.PingID2)
+	end
+	
+	if SGroup_IsEmpty(sg_aagun3) then
+		UI_DeleteMinimapBlip(OBJECTIVE_AA.PingID3)
+	end
+	
+	if SGroup_IsEmpty(sg_aagun1) and SGroup_IsEmpty(sg_aagun2) and SGroup_IsEmpty(sg_aagun3) then
+		JointOps_AddEvent(904)
+		Objective_Complete(OBJECTIVE_AA)
+		Player_AddResource(player1, RT_Munition, 100)
+		Player_AddResource(player2, RT_Munition, 100)
+		Player_AddResource(player1, RT_Manpower, 300)
+		Player_AddResource(player1, RT_Manpower, 300)
+		Player_SetSquadProductionAvailability(player1, SBP.ALLIES.ENGINEER, ITEM_UNLOCKED)
+		Player_SetSquadProductionAvailability(player2, SBP.ALLIES.ENGINEER, ITEM_UNLOCKED)
+		Rule_AddOneShot(intro_gliders_start, 7)
+		intel_aa()
+		Rule_RemoveMe()
+	end
+end
+
+function ObjectiveInit_arti()
+	OBJECTIVE_ARTI =
+	{
+		SetupUI = function()
+			OBJECTIVE_ARTI.PingID = UI_CreateMinimapBlip(sg_ari_officer1, -1, BT_ObjectiveSecondary)
+			OBJECTIVE_ARTI.PingID2 = UI_CreateMinimapBlip(sg_ari_officer2, -1, BT_ObjectiveSecondary)
+		end,
+		
+		OnStart = function()
+			check1 = 0
+			check2 = 0
+			sg_ari_officer1 = SGroup_CreateIfNotFound("sg_ari_officer1")
+			sg_ari_officer2 = SGroup_CreateIfNotFound("sg_ari_officer2")
+			hint_4 = HintPoint_AddToEGroup(eg_ari1, true, nothing, JointOps_Util_CreateLocString("Kill the officer"), true, World_Pos(0,1,0.1))
+			hint_5 = HintPoint_AddToEGroup(eg_ari2, true, nothing, JointOps_Util_CreateLocString("Kill the officer"), true, World_Pos(0,1,0.1))
+			Rule_AddInterval(ObjectiveCheck_arti, 5)
+		end,
+		
+		OnComplete = function()
+		end,
+		
+		IsComplete = function()
+			return false
+		end,
+		
+		OnFail = function()
+		end,
+		
+		Title = LOCSTRINGS.ARTI_TITLE,
+		Description = LOCSTRINGS.ARTI_TITLE,
+		DisplayTitleStart = LOCSTRINGS.ARTI_STARTMSG,
+		Icon = IT_P_Attack,
+		Type = OT_Secondary,
+	}
+	
+	Objective_Register(OBJECTIVE_ARTI)
+end
+
+function ObjectiveCheck_arti()
+	if SGroup_IsEmpty(sg_ari_officer1) and check1 == 0 then
+		UI_DeleteMinimapBlip(OBJECTIVE_ARTI.PingID)
+		HintPoint_Remove(hint_4)
+		intel_onekilled()
+		check1 = 1
+	end
+	
+	if SGroup_IsEmpty(sg_ari_officer2) and check2 == 0 then
+		UI_DeleteMinimapBlip(OBJECTIVE_ARTI.PingID2)
+		HintPoint_Remove(hint_5)
+		intel_onekilled()
+		check2 = 1
+	end
+	
+	if SGroup_IsEmpty(sg_ari_officer1) and SGroup_IsEmpty(sg_ari_officer2) then
+		Objective_Complete(OBJECTIVE_ARTI)
+		JOINTOPS_CALLBACKUP_TRIGGER_COUNT = 2
+		JointOps_AddEvent(905)
+		Player_AddResource(player1, RT_Manpower, 300)
+		Player_AddResource(player2, RT_Manpower, 300)
+		Player_AddResource(player1, RT_Munition, 100)
+		Player_AddResource(player2, RT_Munition, 100)
+		Player_SetSquadProductionAvailability(player1, SBP.ALLIES.MORTAR, ITEM_UNLOCKED)
+		Player_SetSquadProductionAvailability(player2, SBP.ALLIES.MORTAR, ITEM_UNLOCKED)
+		Rule_AddOneShot(intro_arty_start, 8)
+		Rule_RemoveMe()
+	end
+	
+	if not SGroup_IsEmpty(sg_ari_officer1) then
+		Player_GetAllSquadsNearMarker(player1, ari_target1, ari_spotter1, 60)
+		if not SGroup_IsEmpty(ari_target1) then
+			local target = Util_GetPosition(SGroup_GetRandomSpawnedSquad(ari_target1))
+			target.x = target.x + World_GetRand(-15, 15)
+			target.z = target.z + World_GetRand(-15, 15)
+			Cmd_Ability(AXIS, ABILITY.SP.SINGLE_HOWITZER, target)
+		end
+		Player_GetAllSquadsNearMarker(player2, ari_target2, ari_spotter1, 60)
+		if not SGroup_IsEmpty(ari_target2) then
+			local target = Util_GetPosition(SGroup_GetRandomSpawnedSquad(ari_target2))
+			target.x = target.x + World_GetRand(-15, 15)
+			target.z = target.z + World_GetRand(-15, 15)
+			Cmd_Ability(AXIS, ABILITY.SP.SINGLE_HOWITZER, target)
+		end
+		Player_GetAllSquadsNearMarker(ALLIES, ari_target3, ari_spotter1, 60)
+		if not SGroup_IsEmpty(ari_target3) then
+			local target = Util_GetPosition(SGroup_GetRandomSpawnedSquad(ari_target3))
+			target.x = target.x + World_GetRand(-15, 15)
+			target.z = target.z + World_GetRand(-15, 15)
+			Cmd_Ability(AXIS, ABILITY.SP.SINGLE_HOWITZER, target)
+		end
+	end
+	
+	if not SGroup_IsEmpty(sg_ari_officer2) then
+		Player_GetAllSquadsNearMarker(player1, ari_target4, ari_spotter2, 60)
+		if not SGroup_IsEmpty(ari_target4) then
+			local target = Util_GetPosition(SGroup_GetRandomSpawnedSquad(ari_target4))
+			target.x = target.x + World_GetRand(-15, 15)
+			target.z = target.z + World_GetRand(-15, 15)
+			Cmd_Ability(AXIS, ABILITY.SP.SINGLE_HOWITZER, target)
+		end
+		Player_GetAllSquadsNearMarker(player2, ari_target5, ari_spotter2, 60)
+		if not SGroup_IsEmpty(ari_target5) then
+			local target = Util_GetPosition(SGroup_GetRandomSpawnedSquad(ari_target5))
+			target.x = target.x + World_GetRand(-15, 15)
+			target.z = target.z + World_GetRand(-15, 15)
+			Cmd_Ability(AXIS, ABILITY.SP.SINGLE_HOWITZER, target)
+		end
+		Player_GetAllSquadsNearMarker(ALLIES, ari_target6, ari_spotter2, 60)
+		if not SGroup_IsEmpty(ari_target6) then
+			local target = Util_GetPosition(SGroup_GetRandomSpawnedSquad(ari_target6))
+			target.x = target.x + World_GetRand(-15, 15)
+			target.z = target.z + World_GetRand(-15, 15)
+			Cmd_Ability(AXIS, ABILITY.SP.SINGLE_HOWITZER, target)
+		end
+	end
+end
+
+function ObjectiveInit_glider()
+	OBJECTIVE_GLIDER =
+	{
+		SetupUI = function()
+			OBJECTIVE_GLIDER.PingID = UI_CreateMinimapBlip(eg_glider1, -1, BT_ObjectivePrimary)
+			OBJECTIVE_GLIDER.PingID2 = UI_CreateMinimapBlip(eg_glider2, -1, BT_ObjectivePrimary)
+			OBJECTIVE_GLIDER.PingID3 = UI_CreateMinimapBlip(eg_glider3, -1, BT_ObjectivePrimary)
+		end,
+		
+		OnStart = function()
+			hint_6 = HintPoint_AddToEGroup(eg_glider1, true, nothing, JointOps_Util_CreateLocString("Capture this plane"), true, World_Pos(0,1,0.1))
+			hint_7 = HintPoint_AddToEGroup(eg_glider2, true, nothing, JointOps_Util_CreateLocString("Capture this plane"), true, World_Pos(0,1,0.1))
+			hint_8 = HintPoint_AddToEGroup(eg_glider3, true, nothing, JointOps_Util_CreateLocString("Capture this plane"), true, World_Pos(0,1,0.1))
+			Rule_AddInterval(ObjectiveCheck_glider, 1)
+		end,
+		
+		OnComplete = function()
+		end,
+		
+		IsComplete = function()
+			return false
+		end,
+		
+		OnFail = function()
+		end,
+		
+		Title = LOCSTRINGS.GLIDER_TITLE,
+		Description = LOCSTRINGS.GLIDER_TITLE,
+		DisplayTitleStart = LOCSTRINGS.GLIDER_STARTMSG,
+		Icon = IT_P_Attack,
+		Type = OT_Secondary,
+	}
+	
+	Objective_Register(OBJECTIVE_GLIDER)
+end
+
+function ObjectiveCheck_glider()
+	if not EGroup_IsEmpty(eg_glider1) then
+		Player_GetAllSquadsNearMarker(player1, sg_glider_assign1, plane1, 15)
+		Player_GetAllSquadsNearMarker(player2, sg_glider_assign2, plane1, 15)
+		if not SGroup_IsEmpty(sg_glider_assign1) then
+			EGroup_SetPlayerOwner(eg_glider1, player1)
+			UI_DeleteMinimapBlip(OBJECTIVE_GLIDER.PingID)
+			HintPoint_Remove(hint_6)
+			EGroup_Clear(eg_glider1)
+		end
+		
+		if not SGroup_IsEmpty(sg_glider_assign2) then
+			EGroup_SetPlayerOwner(eg_glider1, player2)
+			UI_DeleteMinimapBlip(OBJECTIVE_GLIDER.PingID)
+			HintPoint_Remove(hint_6)
+			EGroup_Clear(eg_glider1)
+		end
+	end
+	
+	if not EGroup_IsEmpty(eg_glider2) then
+		Player_GetAllSquadsNearMarker(player1, sg_glider_assign3, plane2, 15)
+		Player_GetAllSquadsNearMarker(player2, sg_glider_assign4, plane2, 15)
+		if not SGroup_IsEmpty(sg_glider_assign3) then
+			EGroup_SetPlayerOwner(eg_glider2, player1)
+			UI_DeleteMinimapBlip(OBJECTIVE_GLIDER.PingID2)
+			HintPoint_Remove(hint_7)
+			EGroup_Clear(eg_glider2)
+		end
+		
+		if not SGroup_IsEmpty(sg_glider_assign4) then
+			EGroup_SetPlayerOwner(eg_glider2, player2)
+			UI_DeleteMinimapBlip(OBJECTIVE_GLIDER.PingID2)
+			HintPoint_Remove(hint_7)
+			EGroup_Clear(eg_glider2)
+		end
+	end
+	
+	if not EGroup_IsEmpty(eg_glider3) then
+		Player_GetAllSquadsNearMarker(player1, sg_glider_assign5, plane3, 15)
+		Player_GetAllSquadsNearMarker(player2, sg_glider_assign6, plane3, 15)
+		if not SGroup_IsEmpty(sg_glider_assign5) then
+			EGroup_SetPlayerOwner(eg_glider3, player1)
+			UI_DeleteMinimapBlip(OBJECTIVE_GLIDER.PingID3)
+			HintPoint_Remove(hint_8)
+			EGroup_Clear(eg_glider3)
+		end
+		
+		if not SGroup_IsEmpty(sg_glider_assign6) then
+			EGroup_SetPlayerOwner(eg_glider3, player2)
+			UI_DeleteMinimapBlip(OBJECTIVE_GLIDER.PingID3)
+			HintPoint_Remove(hint_8)
+			EGroup_Clear(eg_glider3)
+		end
+	end
+	
+	if EGroup_IsEmpty(eg_glider1) and EGroup_IsEmpty(eg_glider2) and EGroup_IsEmpty(eg_glider3) then
+		Objective_Complete(OBJECTIVE_GLIDER)
+		JointOps_AddEvent(906)
+		if not MULTIPLAYER then
+			Player_AddResource(player1, RT_Fuel, 350)
+			Player_AddResource(player2, RT_Fuel, 350)
+		else
+			Player_AddResource(player1, RT_Fuel, 250)
+			Player_AddResource(player2, RT_Fuel, 250)
+		end
+		Rule_RemoveMe()
+	end
+end
+
+function ObjectiveInit_fuelbase()
+	OBJECTIVE_FUELBASE =
+	{
+		SetupUI = function()
+			OBJECTIVE_FUELBASE.PingID = UI_CreateMinimapBlip(eg_axis_fhq4, -1, BT_ObjectivePrimary)
+		end,
+		
+		OnStart = function()
+			Rule_AddInterval(ObjectiveCheck_fuelbase, 5)
+			hint_9 = HintPoint_AddToEGroup(eg_axis_fhq4, true, nothing, JointOps_Util_CreateLocString("Uncap or destroy this building"), true, World_Pos(0,1,0.1))
+		end,
+		
+		OnComplete = function()
+		end,
+		
+		IsComplete = function()
+			return false
+		end,
+		
+		OnFail = function()
+		end,
+		
+		Title = LOCSTRINGS.FUELBASE_TITLE,
+		Description = LOCSTRINGS.FUELBASE_TITLE,
+		DisplayTitleStart = LOCSTRINGS.FUELBASE_STARTMSG,
+		Icon = IT_P_Attack,
+		Type = OT_Secondary,
+	}
+	
+	Objective_Register(OBJECTIVE_FUELBASE)
+end
+
+function ObjectiveCheck_fuelbase()
+	if not EGroup_HasUpgrade(eg_axis_fhq4, UPG.ELITE.CONVERT_AMBIENT_BUILDING, ANY) or EGroup_IsEmpty(eg_axis_fhq4) then
+		UI_DeleteMinimapBlip(OBJECTIVE_FUELBASE.PingID)
+		JointOps_AddEvent(907)
+		HintPoint_Remove(hint_9)
+		Objective_Complete(OBJECTIVE_FUELBASE)
+		Rule_AddOneShot(bonus_tank, 5)
+		Rule_AddOneShot(hint2, 10)
+		Rule_AddOneShot(start_flak, 15)
+		Rule_AddInterval(tank_spawner, 180)
+		Rule_AddInterval(medic_bunker_check, 67)
+		Player_SetAbilityAvailability(player1, ABILITY.COMMANDER_TREE.ALLIES.RECRUIT_PARADROP_AT, ITEM_UNLOCKED)
+		Player_SetAbilityAvailability(player2, ABILITY.COMMANDER_TREE.ALLIES.RECRUIT_PARADROP_AT, ITEM_UNLOCKED)
+		Player_SetSquadProductionAvailability(player1, SBP.ALLIES.AT_57MM, ITEM_UNLOCKED)
+		Player_SetSquadProductionAvailability(player2, SBP.ALLIES.AT_57MM, ITEM_UNLOCKED)
+		Rule_RemoveMe()
+	end
+end
+
+function ObjectiveInit_flak()
+	OBJECTIVE_FLAK =
+	{
+		SetupUI = function()
+			OBJECTIVE_FLAK.PingID = UI_CreateMinimapBlip(sg_flak1, -1, BT_ObjectiveSecondary)
+			OBJECTIVE_FLAK.PingID2 = UI_CreateMinimapBlip(sg_flak2, -1, BT_ObjectiveSecondary)
+		end,
+		
+		OnStart = function()
+			check3 = 0
+			check4 = 0
+			Rule_AddInterval(ObjectiveCheck_flak, 5)
+		end,
+		
+		OnComplete = function()
+		end,
+		
+		IsComplete = function()
+			return false
+		end,
+		
+		OnFail = function()
+		end,
+		
+		Title = LOCSTRINGS.FLAK_TITLE,
+		Description = LOCSTRINGS.FLAK_TITLE,
+		DisplayTitleStart = LOCSTRINGS.FLAK_STARTMSG,
+		Icon = IT_P_Attack,
+		Type = OT_Secondary,
+	}
+	
+	Objective_Register(OBJECTIVE_FLAK)
+end
+
+function ObjectiveCheck_flak()
+	if SGroup_IsEmpty(sg_flak1) and check3 == 0 then
+		UI_DeleteMinimapBlip(OBJECTIVE_FLAK.PingID)
+		intel_flak()
+		check3 = 1
+	end
+	
+	if SGroup_IsEmpty(sg_flak2) and check4 == 0 then
+		UI_DeleteMinimapBlip(OBJECTIVE_FLAK.PingID2)
+		intel_flak()
+		check4 = 1
+	end
+	
+	if SGroup_IsEmpty(sg_flak1) and SGroup_IsEmpty(sg_flak2) then
+		Objective_Complete(OBJECTIVE_FLAK)
+		JOINTOPS_CALLBACKUP_TRIGGER_COUNT = 1
+		JointOps_AddEvent(908)
+		intel_excellent()
+		Player_SetAbilityAvailability(player1, ABILITY.COMMANDER_TREE.ALLIES.STRAFE_ROCKET, ITEM_UNLOCKED)
+		Player_SetAbilityAvailability(player2, ABILITY.COMMANDER_TREE.ALLIES.STRAFE_ROCKET, ITEM_UNLOCKED)
+		if not MULTIPLAYER then
+			Player_AddResource(player1, RT_Munition, 500)
+			Player_AddResource(player2, RT_Munition, 500)
+		end
+		-- Rule_AddOneShot(intro_gliders_start, 5)
+		Rule_RemoveMe()
+	end
+end
+
+function bonus_tank()
+	sg_bonus1 = SGroup_CreateIfNotFound("sg_bonus1")
+	sg_bonus2 = SGroup_CreateIfNotFound("sg_bonus2")
+	
+	if MULTIPLAYER then
+		Util_CreateSquadsAtMarker(player1, sg_bonus1, SBP.ALLIES.SHERMAN, spn_south1, 1)
+		Util_CreateSquadsAtMarker(player2, sg_bonus2, SBP.ALLIES.SHERMAN, spn_south2, 1)
+	else
+		if AI_IsAIPlayer(World_GetPlayerAt(1)) then
+			Util_CreateSquadsAtMarker(player2, sg_bonus1, SBP.ALLIES.SHERMAN, spn_south1, 1)
+			Util_CreateSquadsAtMarker(player2, sg_bonus2, SBP.CW.STUART, spn_south2, 1)
+		else
+			Util_CreateSquadsAtMarker(player1, sg_bonus1, SBP.ALLIES.SHERMAN, spn_south1, 1)
+			Util_CreateSquadsAtMarker(player1, sg_bonus2, SBP.CW.STUART, spn_south2, 1)
+		end
+	end
+	
+	Cmd_Move(sg_bonus1, supply8)
+	Cmd_Move(sg_bonus2, intro15)
+	UI_CreateMinimapBlip(sg_bonus1, 10, BT_ObjectiveMedal)
+	UI_CreateMinimapBlip(sg_bonus2, 10, BT_ObjectiveMedal)
+	JointOps_Util_GlobalMessage(JointOps_Util_CreateLocString("HQ has sent us some tanks"), 2)
+end
+
+function panzergruppe()
+	sg_panzer1 = SGroup_CreateIfNotFound("sg_panzer1")
+	sg_panzer2 = SGroup_CreateIfNotFound("sg_panzer2")
+	sg_panzer3 = SGroup_CreateIfNotFound("sg_panzer3")
+	
+	Util_CreateSquadsAtMarker(AXIS, sg_panzer1, SBP.AXIS.PANZER, att_spn3, 1)
+	Util_CreateSquadsAtMarker(AXIS, sg_panzer2, SBP.ELITE.PANZER_SUPPORT, att_spn1, 1)
+	Util_CreateSquadsAtMarker(AXIS, sg_panzer3, SBP.AXIS.STUG, att_spn2, 1)
+	
+	Cmd_Move(sg_panzer1, intro11, true)
+	Cmd_Move(sg_panzer2, mines10, true)
+	Cmd_Move(sg_panzer3, mines9, true)
+	Cmd_AttackMove(sg_panzer1, intro_cam1, true)
+	Cmd_AttackMove(sg_panzer2, intro10, true)
+	Cmd_AttackMove(sg_panzer3, mines8, true)
+	
+	ThreatArrow_CreateGroup(sg_panzer1)
+	ThreatArrow_CreateGroup(sg_panzer2)
+	ThreatArrow_CreateGroup(sg_panzer3)
+	
+	UI_CreateMinimapBlip(sg_panzer1, 10, BT_CombatPing)
+	UI_CreateMinimapBlip(sg_panzer2, 10, BT_CombatPing)
+	UI_CreateMinimapBlip(sg_panzer3, 10, BT_CombatPing)
+	
+	Cmd_Ability(AXIS, ABILITY.COMMANDER_TREE.AXIS.BLITZKRIEG, nil, nil, true)
+	
+	JointOps_Util_GlobalMessage(JointOps_Util_CreateLocString("A small panzergruppe is breaking through to help the defenders!"), 2)
+	Sound_Play2D(SOUNDS.ARMOR)
+end
+
+function supply_drop()
+	local target = Util_GetPosition(Marker_FromName("supply"..World_GetRand(1, 15), "blue_marker"))
+	Cmd_Ability(ALLIES, ABILITY.COMMANDER_TREE.ALLIES.SUPPLY_DROP, target, nil, true)
+	UI_CreateMinimapBlip(target, 10, BT_CaptureHerePing)
+	EventCue_Create(CUE.NORMAL, LOCSTRINGS.SUPPLY, LOCSTRINGS.SUPPLY, target)
+	Sound_Play2D(SOUNDS.SUPPLY)
+end
+
+function spawn_gliders()
+	Util_CreateEntities(ALLIES, eg_glider1, EBP.CW.GLIDER_HQ, plane1, 1)
+	Util_CreateEntities(ALLIES, eg_glider2, EBP.CW.GLIDER_TETRARCH, plane2, 1)
+	Util_CreateEntities(ALLIES, eg_glider3, EBP.CW.GLIDER_TETRARCH, plane3, 1)
+	Modify_Vulnerability(eg_glider1, 0.25)
+	Modify_Vulnerability(eg_glider2, 0.25)
+	Modify_Vulnerability(eg_glider3, 0.25)
+end
+
+function fire_arti_units()
+	if not SGroup_IsEmpty(sg_hummel1) then
+		Player_GetAllSquadsNearMarker(player1, hummel1_target1, hummel1, 70)
+		Player_GetAllSquadsNearMarker(player2, hummel1_target2, hummel1, 70)
+		Player_GetAllSquadsNearMarker(ALLIES, hummel1_target3, hummel1, 70)
+		
+		if not SGroup_IsEmpty(hummel1_target1) then
+			local target = Util_GetPosition(SGroup_GetRandomSpawnedSquad(hummel1_target1))
+			target.x = target.x + World_GetRand(-15, 15)
+			target.z = target.z + World_GetRand(-15, 15)
+			Cmd_Ability(sg_hummel1, ABILITY.ELITE.HUMMEL_BARRAGE, target, target, true, true)
+		elseif not SGroup_IsEmpty(hummel1_target2) then
+			local target = Util_GetPosition(SGroup_GetRandomSpawnedSquad(hummel1_target2))
+			target.x = target.x + World_GetRand(-15, 15)
+			target.z = target.z + World_GetRand(-15, 15)
+			Cmd_Ability(sg_hummel1, ABILITY.ELITE.HUMMEL_BARRAGE, target, target, true, true)
+		elseif not SGroup_IsEmpty(hummel1_target3) then
+			local target = Util_GetPosition(SGroup_GetRandomSpawnedSquad(hummel1_target3))
+			target.x = target.x + World_GetRand(-15, 15)
+			target.z = target.z + World_GetRand(-15, 15)
+			Cmd_Ability(sg_hummel1, ABILITY.ELITE.HUMMEL_BARRAGE, target, target, true, true)
+		end
+	end
+	
+	if not SGroup_IsEmpty(sg_hummel2) then
+		Player_GetAllSquadsNearMarker(player1, hummel2_target1, hummel2, 70)
+		Player_GetAllSquadsNearMarker(player2, hummel2_target2, hummel2, 70)
+		Player_GetAllSquadsNearMarker(ALLIES, hummel2_target3, hummel2, 70)
+		
+		if not SGroup_IsEmpty(hummel2_target1) then
+			local target = Util_GetPosition(SGroup_GetRandomSpawnedSquad(hummel2_target1))
+			target.x = target.x + World_GetRand(-15, 15)
+			target.z = target.z + World_GetRand(-15, 15)
+			Cmd_Ability(sg_hummel2, ABILITY.ELITE.HUMMEL_BARRAGE, target, target, true, true)
+		elseif not SGroup_IsEmpty(hummel2_target2) then
+			local target = Util_GetPosition(SGroup_GetRandomSpawnedSquad(hummel2_target2))
+			target.x = target.x + World_GetRand(-15, 15)
+			target.z = target.z + World_GetRand(-15, 15)
+			Cmd_Ability(sg_hummel2, ABILITY.ELITE.HUMMEL_BARRAGE, target, target, true, true)
+		elseif not SGroup_IsEmpty(hummel2_target3) then
+			local target = Util_GetPosition(SGroup_GetRandomSpawnedSquad(hummel2_target3))
+			target.x = target.x + World_GetRand(-15, 15)
+			target.z = target.z + World_GetRand(-15, 15)
+			Cmd_Ability(sg_hummel2, ABILITY.ELITE.HUMMEL_BARRAGE, target, target, true, true)
+		end
+	end
+	
+	if not SGroup_IsEmpty(sg_nebel1) then
+		Player_GetAllSquadsNearMarker(player1, nebel1_target1, nebel1, 70)
+		Player_GetAllSquadsNearMarker(player2, nebel1_target2, nebel1, 70)
+		Player_GetAllSquadsNearMarker(ALLIES, nebel1_target3, nebel1, 70)
+		
+		if not SGroup_IsEmpty(nebel1_target1) then
+			local target = Util_GetPosition(SGroup_GetRandomSpawnedSquad(nebel1_target1))
+			target.x = target.x + World_GetRand(-15, 15)
+			target.z = target.z + World_GetRand(-15, 15)
+			Cmd_Ability(sg_nebel1, ABILITY.AXIS.NEB_BARRAGE, target, nil, true, true)
+		elseif not SGroup_IsEmpty(nebel1_target2) then
+			local target = Util_GetPosition(SGroup_GetRandomSpawnedSquad(nebel1_target2))
+			target.x = target.x + World_GetRand(-15, 15)
+			target.z = target.z + World_GetRand(-15, 15)
+			Cmd_Ability(sg_nebel1, ABILITY.AXIS.NEB_BARRAGE, target, nil, true, true)
+		elseif not SGroup_IsEmpty(nebel1_target3) then
+			local target = Util_GetPosition(SGroup_GetRandomSpawnedSquad(nebel1_target3))
+			target.x = target.x + World_GetRand(-15, 15)
+			target.z = target.z + World_GetRand(-15, 15)
+			Cmd_Ability(sg_nebel1, ABILITY.AXIS.NEB_BARRAGE, target, nil, true, true)
+		end
+	end
+	
+	if not SGroup_IsEmpty(sg_nebel2) then
+		Player_GetAllSquadsNearMarker(player1, nebel2_target1, nebel2, 70)
+		Player_GetAllSquadsNearMarker(player2, nebel2_target2, nebel2, 70)
+		Player_GetAllSquadsNearMarker(ALLIES, nebel2_target3, nebel2, 70)
+		
+		if not SGroup_IsEmpty(nebel2_target1) then
+			local target = Util_GetPosition(SGroup_GetRandomSpawnedSquad(nebel2_target1))
+			target.x = target.x + World_GetRand(-15, 15)
+			target.z = target.z + World_GetRand(-15, 15)
+			Cmd_Ability(sg_nebel2, ABILITY.AXIS.NEB_BARRAGE, target, nil, true, true)
+		elseif not SGroup_IsEmpty(nebel2_target2) then
+			local target = Util_GetPosition(SGroup_GetRandomSpawnedSquad(nebel2_target2))
+			target.x = target.x + World_GetRand(-15, 15)
+			target.z = target.z + World_GetRand(-15, 15)
+			Cmd_Ability(sg_nebel2, ABILITY.AXIS.NEB_BARRAGE, target, nil, true, true)
+		elseif not SGroup_IsEmpty(nebel2_target3) then
+			local target = Util_GetPosition(SGroup_GetRandomSpawnedSquad(nebel2_target3))
+			target.x = target.x + World_GetRand(-15, 15)
+			target.z = target.z + World_GetRand(-15, 15)
+			Cmd_Ability(sg_nebel2, ABILITY.AXIS.NEB_BARRAGE, target, nil, true, true)
+		end
+	end
+end
+
+function spawn_allies_arty()
+	sg_allies_arty1 = SGroup_CreateIfNotFound("sg_allies_arty1")
+	sg_allies_arty2 = SGroup_CreateIfNotFound("sg_allies_arty2")
+	
+	if MULTIPLAYER then
+		Util_CreateSquadsAtMarker(player1, sg_allies_arty1, SBP.ALLIES.HOWITZER, allies_arty1, 1)
+		Util_CreateSquadsAtMarker(player2, sg_allies_arty2, SBP.ALLIES.HOWITZER, allies_arty2, 1)
+	else
+		if AI_IsAIPlayer(World_GetPlayerAt(1)) then
+			Util_CreateSquadsAtMarker(player2, sg_allies_arty1, SBP.ALLIES.HOWITZER, allies_arty1, 1)
+			Util_CreateSquadsAtMarker(player2, sg_allies_arty2, SBP.ALLIES.HOWITZER, allies_arty2, 1)
+		else
+			Util_CreateSquadsAtMarker(player1, sg_allies_arty1, SBP.ALLIES.HOWITZER, allies_arty1, 1)
+			Util_CreateSquadsAtMarker(player1, sg_allies_arty2, SBP.ALLIES.HOWITZER, allies_arty2, 1)
+		end
+	end
+end
+
+function setup_allies_fhq()
+	if EGroup_IsHoldingAny(allies_fhq1) then
+		Cmd_Ungarrison(allies_fhq1, fhq1_despawn)
+	end
+	if EGroup_IsHoldingAny(allies_fhq2) then
+		Cmd_Ungarrison(allies_fhq2, fhq2_despawn)
+	end
+	
+	EGroup_SetPlayerOwner(allies_fhq1, player1)
+	Cmd_InstantUpgrade(allies_fhq1, UPG.ALLIES.CONVERT_AMBIENT_BUILDING)
+	EGroup_SetPlayerOwner(allies_fhq2, player2)
+	Cmd_InstantUpgrade(allies_fhq2, UPG.ALLIES.CONVERT_AMBIENT_BUILDING)
+end
+
+function goliath()
+	if SGroup_IsEmpty(sg_goliath) then
+		Util_CreateSquadsAtMarker(AXIS, sg_goliath, SBP.AXIS.GOLIATH, Util_GetPosition(Marker_FromName("spn_north" .. World_GetRand(1, 5), "blue_marker")), 1)
+		Cmd_Move(sg_goliath, Util_GetPosition(Marker_FromName("att" .. World_GetRand(1, 6), "red_marker")), true)
+	else
+		Cmd_Move(sg_goliath, Util_GetPosition(Marker_FromName("att" .. World_GetRand(3, 6), "red_marker")), true)
+	end
+end
+
+function tank_spawner()
+	type1 = types_tank[World_GetRand(1, table.getn(types_tank))]
+	type2 = types_tank[World_GetRand(1, table.getn(types_tank))]
+	
+	if SGroup_IsEmpty(sg_allies_tank1) then
+		if MULTIPLAYER then
+			Util_CreateSquadsAtMarker(player1, sg_allies_tank1, type1, spn_south2, 1)
+			Cmd_Move(sg_allies_tank1, att3)
+			if Player_GetID(Game_GetLocalPlayer()) == Player_GetID(player1) then
+				UI_CreateMinimapBlip(sg_allies_tank1, 10, BT_ObjectiveMedal)
+				Sound_Play2D(SOUNDS.REINFORCEMENTS)
+				EventCue_Create(CUE.NORMAL, LOCSTRINGS.TANK, LOCSTRINGS.TANK, sg_allies_tank1)
+			end
+		else
+			if AI_IsAIPlayer(World_GetPlayerAt(1)) then
+				Util_CreateSquadsAtMarker(player2, sg_allies_tank1, type1, spn_south4, 1)
+				Cmd_Move(sg_allies_tank1, intro15)
+				if Player_GetID(Game_GetLocalPlayer()) == Player_GetID(player2) then
+					UI_CreateMinimapBlip(sg_allies_tank1, 10, BT_ObjectiveMedal)
+					Sound_Play2D(SOUNDS.REINFORCEMENTS)
+					EventCue_Create(CUE.NORMAL, LOCSTRINGS.TANK, LOCSTRINGS.TANK, sg_allies_tank1)
+				end
+			else
+				Util_CreateSquadsAtMarker(player1, sg_allies_tank1, type1, spn_south2, 1)
+				Cmd_Move(sg_allies_tank1, att3)
+				if Player_GetID(Game_GetLocalPlayer()) == Player_GetID(player1) then
+					UI_CreateMinimapBlip(sg_allies_tank1, 10, BT_ObjectiveMedal)
+					Sound_Play2D(SOUNDS.REINFORCEMENTS)
+					EventCue_Create(CUE.NORMAL, LOCSTRINGS.TANK, LOCSTRINGS.TANK, sg_allies_tank1)
+				end
+			end
+		end
+	end
+	
+	if SGroup_IsEmpty(sg_allies_tank2) then
+		if MULTIPLAYER then
+			Util_CreateSquadsAtMarker(player2, sg_allies_tank2, type2, spn_south4, 1)
+			Cmd_Move(sg_allies_tank2, intro15)
+			if Player_GetID(Game_GetLocalPlayer()) == Player_GetID(player2) then
+				UI_CreateMinimapBlip(sg_allies_tank2, 10, BT_ObjectiveMedal)
+				Sound_Play2D(SOUNDS.REINFORCEMENTS)
+				EventCue_Create(CUE.NORMAL, LOCSTRINGS.TANK, LOCSTRINGS.TANK, sg_allies_tank2)
+			end
+		else
+			if AI_IsAIPlayer(World_GetPlayerAt(1)) then
+				Util_CreateSquadsAtMarker(player2, sg_allies_tank2, type2, spn_south4, 1)
+				Cmd_Move(sg_allies_tank2, intro15)
+				if Player_GetID(Game_GetLocalPlayer()) == Player_GetID(player2) then
+					UI_CreateMinimapBlip(sg_allies_tank2, 10, BT_ObjectiveMedal)
+					Sound_Play2D(SOUNDS.REINFORCEMENTS)
+					EventCue_Create(CUE.NORMAL, LOCSTRINGS.TANK, LOCSTRINGS.TANK, sg_allies_tank2)
+				end
+			else
+				Util_CreateSquadsAtMarker(player1, sg_allies_tank2, type2, spn_south2, 1)
+				Cmd_Move(sg_allies_tank2, att3)
+				if Player_GetID(Game_GetLocalPlayer()) == Player_GetID(player1) then
+					UI_CreateMinimapBlip(sg_allies_tank2, 10, BT_ObjectiveMedal)
+					Sound_Play2D(SOUNDS.REINFORCEMENTS)
+					EventCue_Create(CUE.NORMAL, LOCSTRINGS.TANK, LOCSTRINGS.TANK, sg_allies_tank2)
+				end
+			end
+		end
+	end
+end
+
+function medic_bunker_check()
+	-- check if axis spawned units from medic bunker
+	local sg_medic = SGroup_CreateIfNotFound("sg_medic")
+	Player_GetAllSquadsNearMarker(AXIS, sg_medic, mbunker1, 6)
+	if not SGroup_IsEmpty(sg_medic) then
+		Cmd_AttackMove(sg_medic, Util_GetPosition(Marker_FromName("def" .. World_GetRand(1, 6), "red_marker")), true)
+	end
+	
+	-- also check if idle units sitting at hq (happens when buildings they try to go got destroyed before)
+	local sg_idle = SGroup_CreateIfNotFound("sg_idle")
+	Player_GetAllSquadsNearMarker(AXIS, sg_idle, hq_spn2, 2)
+	if not SGroup_IsEmpty(sg_idle) then
+		Cmd_AttackMove(sg_idle, Util_GetPosition(Marker_FromName("def" .. World_GetRand(1, 6), "red_marker")), true)
+	end
+end
+
+function searchlights()
+	if rotator == 1 then
+		x = x + 0.5
+		
+		if not EGroup_IsEmpty(eg_spot1) then
+			Entity_SetAnimatorVariable(EGroup_GetSpawnedEntityAt(eg_spot1, 1), "Rotate", x)
+		end
+		if not EGroup_IsEmpty(eg_spot2) then
+			Entity_SetAnimatorVariable(EGroup_GetSpawnedEntityAt(eg_spot2, 1), "Rotate", x)
+		end
+		if not EGroup_IsEmpty(eg_spot3) then
+			Entity_SetAnimatorVariable(EGroup_GetSpawnedEntityAt(eg_spot3, 1), "Rotate", x)
+		end
+		if not EGroup_IsEmpty(eg_spot4) then
+			Entity_SetAnimatorVariable(EGroup_GetSpawnedEntityAt(eg_spot4, 1), "Rotate", x)
+		end
+		if x >= 75 then
+			rotator = 2
+		end
+	elseif rotator == 2 then
+		x = x - 0.5
+		if not EGroup_IsEmpty(eg_spot1) then
+			Entity_SetAnimatorVariable(EGroup_GetSpawnedEntityAt(eg_spot1, 1), "Rotate", x)
+		end
+		if not EGroup_IsEmpty(eg_spot2) then
+			Entity_SetAnimatorVariable(EGroup_GetSpawnedEntityAt(eg_spot2, 1), "Rotate", x)
+		end
+		if not EGroup_IsEmpty(eg_spot3) then
+			Entity_SetAnimatorVariable(EGroup_GetSpawnedEntityAt(eg_spot3, 1), "Rotate", x)
+		end
+		if not EGroup_IsEmpty(eg_spot4) then
+			Entity_SetAnimatorVariable(EGroup_GetSpawnedEntityAt(eg_spot4, 1), "Rotate", x)
+		end
+		if x <= -75 then
+			rotator = 1
+		end
+	end
+	
+	if EGroup_IsEmpty(eg_spot1) and EGroup_IsEmpty(eg_spot2) then
+		Rule_RemoveMe()
+	end
+end
+
+function stats()
+	display_stat(true)
+end
+
+function display_stat(show)
+	local time = World_GetGameTime()
+	local minutes = math.floor(time / 60)
+	
+	dr_clear("strong")
+	dr_setautoclear("strong", false)
+	dr_setdisplay("strong", true)
+	
+	if not show then
+		return
+	end
+	
+	dr_text2d("strong", 0.15, 0.24, "STRONGHOLD MISSION STATISTICS:", 224, 255, 255)
+	if not MULTIPLAYER then
+		dr_text2d("strong", 0.15, 0.30, "SINGLE PLAYER MODE", 255, 0, 0)
+	else
+		dr_text2d("strong", 0.15, 0.30, "MULTIPLAYER MODE", 255, 0, 0)
+	end
+	dr_text2d("strong", 0.15, 0.36, plr1[1], 255, 48, 48)
+	dr_text2d("strong", 0.15, 0.42, "Soldiers killed: " .. Stats_SoldiersKilled(player1), 255, 222, 173)
+	dr_text2d("strong", 0.15, 0.44, "Vehicles killed: " .. Stats_VehiclesKilled(player1), 255, 222, 173)
+	dr_text2d("strong", 0.15, 0.46, "Soldiers lost: " .. Stats_InfantryLost(player1), 255, 222, 173)
+	dr_text2d("strong", 0.15, 0.48, "Vehicles lost: " .. Stats_VehiclesLost(player1), 255, 222, 173)
+	dr_text2d("strong", 0.15, 0.50, "Buildings lost: " .. Stats_BuildingsLost(player1), 255, 222, 173)
+	dr_text2d("strong", 0.15, 0.56, "PLAYING TIME: " .. minutes .. " minutes", 255, 255, 255)
+	
+	dr_text2d("strong", 0.4, 0.36, plr2[1], 255, 48, 48)
+	dr_text2d("strong", 0.4, 0.42, "Soldiers killed: " .. Stats_SoldiersKilled(player2), 255, 218, 185)
+	dr_text2d("strong", 0.4, 0.44, "Vehicles killed: " .. Stats_VehiclesKilled(player2), 255, 218, 185)
+	dr_text2d("strong", 0.4, 0.46, "Soldiers lost: " .. Stats_InfantryLost(player2), 255, 218, 185)
+	dr_text2d("strong", 0.4, 0.48, "Vehicles lost: " .. Stats_VehiclesLost(player2), 255, 218, 185)
+	dr_text2d("strong", 0.4, 0.50, "Buildings lost: " .. Stats_BuildingsLost(player2), 255, 218, 185)
+	
+	dr_text2d("strong", 0.65, 0.36, "ALLIED CPU:", 255, 48, 48)
+	dr_text2d("strong", 0.65, 0.42, "Soldiers killed: " .. Stats_SoldiersKilled(ALLIES), 255, 228, 196)
+	dr_text2d("strong", 0.65, 0.44, "Vehicles killed: " .. Stats_VehiclesKilled(ALLIES), 255, 228, 196)
+	dr_text2d("strong", 0.65, 0.46, "Soldiers lost: " .. Stats_InfantryLost(ALLIES), 255, 228, 196)
+	dr_text2d("strong", 0.65, 0.48, "Vehicles lost: " .. Stats_VehiclesLost(ALLIES), 255, 228, 196)
+	dr_text2d("strong", 0.65, 0.50, "Buildings lost: " .. Stats_BuildingsLost(ALLIES), 255, 228, 196)
+end
+
+function Util_EndGame()
+	Sound_Play2D(SOUNDS.LOSE)
+	Camera_StopAutoRotating()
+	Game_Letterbox(false, 0)
+	display_stat(false)
+	World_SetTeamWin(WINNER, "annihilate")
+	World_SetGameOver()
+end
+
+function intro_aa_start()
+	intro_aa()
+end
+
+function intro_gliders_start()
+	if arti_intro_running == false then
+		intro_gliders()
+	else
+		Rule_AddOneShot(intro_gliders_start, 20)
+		Rule_RemoveMe()
+	end
+end
+
+function intro_arty_start()
+	if gliders_intro_running == false then
+		intro_give_arti()
+	else
+		Rule_AddOneShot(intro_arty_start, 20)
+		Rule_RemoveMe()
+	end
+end
+
+function start_fhq()
+	ObjectiveInit_FHQ()
+	Objective_Start(OBJECTIVE_FHQ, true)
+end
+
+function start_main()
+	ObjectiveInit_main()
+	Objective_Start(OBJECTIVE_MAIN, true)
+end
+
+function start_aa()
+	ObjectiveInit_aa()
+	Objective_Start(OBJECTIVE_AA, true)
+end
+
+function start_arti()
+	ObjectiveInit_arti()
+	Objective_Start(OBJECTIVE_ARTI, true)
+end
+
+function start_gliders()
+	ObjectiveInit_glider()
+	Objective_Start(OBJECTIVE_GLIDER, true)
+end
+
+function start_fuelbase()
+	ObjectiveInit_fuelbase()
+	Objective_Start(OBJECTIVE_FUELBASE, true)
+end
+
+function start_flak()
+	ObjectiveInit_flak()
+	Objective_Start(OBJECTIVE_FLAK, true)
+end
+
+function XDebug1()
+	OutroWin()
+end
+
+function XDebug2()
+	ToggleTaskbar()
+end
+
+function XDebug3()
+	shot()
+end
+
+function intel_counterattack()
+	Util_StartIntel(EVENTS.COUNTERATTACK)
+end
+
+function intel_go()
+	Util_StartIntel(EVENTS.GO)
+end
+
+function intel_onekilled()
+	Util_StartIntel(EVENTS.ONEKILLED)
+end
+
+function intel_excellent()
+	Util_StartIntel(EVENTS.COMPLETE)
+end
+
+function intel_flak()
+	Util_StartIntel(EVENTS.FLAK)
+end
+
+function intel_aa()
+	Util_StartIntel(EVENTS.AADEAD)
+end
+
+function intel_bridges()
+	Util_StartIntel(EVENTS.BRIDGES)
+end
+
+function intel_bridges_sec()
+	Util_StartIntel(EVENTS.BRIDGES_SECURED)
+end
+
+function intel_vehicle()
+	Util_StartIntel(EVENTS.VEHICLE)
+end
+
+function ToggleTaskbar()
+	if (Taskbar_IsVisible() == true) then
+		Taskbar_SetVisibility(false)
+	else
+		Taskbar_SetVisibility(true)
+	end
+end
+
+function shot()
+	Misc_SuperScreenshot()
+end
+
+function reveal()
+	FOW_RevealAll()
+end

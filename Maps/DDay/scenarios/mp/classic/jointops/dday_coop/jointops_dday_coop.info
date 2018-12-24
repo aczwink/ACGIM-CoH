@@ -1,0 +1,19 @@
+HeaderInfo =  
+{
+	scenarioname = "$18010013",
+	scenariodescription = "$18010014",
+	maxplayers = 6,
+	date = "10.4.2009 00:00	",
+	scenarioabbrname = "",
+	savedname = "",
+	version = 2003,
+	mapsize =  
+	{
+		416,
+		416,
+	},
+	music = "",
+	scenariotype = 2,
+	modname = "CoopMaps",
+}
+

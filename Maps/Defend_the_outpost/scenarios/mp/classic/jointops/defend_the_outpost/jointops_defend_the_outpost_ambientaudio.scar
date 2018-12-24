@@ -1,0 +1,8 @@
+AmbientAudio =  
+{
+	"ambiences/ambiences_streamed/cxp2/genericambiences/backgrounds/wind/layers/generic_wind_rain",
+	"specialfx/radiofuzz",
+	"specialfx/tinitus",
+	"mastereffects/reverbs/reverb_master",
+}
+

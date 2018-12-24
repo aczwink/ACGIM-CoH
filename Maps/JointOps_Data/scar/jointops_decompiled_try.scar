@@ -1,0 +1,268 @@
+import("ScarUtil.scar")
+
+JointOps_Init = function(l_1_0, l_1_1)
+  g_VPConditionsLoaded = false
+  g_CheckAnnihilate = false
+  SBP.ALLIES.T17 = BP_GetSquadBlueprint("sbps/races/allies/vehicles/t17_armoured_car_squad.lua")
+  UPG.ELITE.FG42 = BP_GetUpgradeBlueprint("upgrade/axis_pe/items/panzer_elite_falschirmjager_fg42_package.lua")
+  if World_GetPlayerCount() ~= l_1_1 then
+    JointOps_Util_GlobalMessage(JointOps_Util_CreateLocString("All " .. l_1_1 .. " player slots must be filled.\nCheck map description. Mission aborted!"), 10)
+    if Marker_Exists("mkr_rotate", "") then
+      Camera_AutoRotate(Util_GetPosition(mkr_rotate), 30, 47, 1.5)
+      FOW_RevealArea(Util_GetPosition(mkr_rotate), 20, -1)
+    end
+    Rule_AddOneShot(JointOps_EndGame, 11)
+    return false
+  end
+  for l_1_5 = 1, World_GetPlayerCount() do
+    if Player_IsHuman(World_GetPlayerAt(l_1_5)) and string.find(Player_GetRaceName(World_GetPlayerAt(l_1_5)), l_1_0) == nil then
+      JointOps_Util_GlobalMessage(JointOps_Util_CreateLocString("Invalid army selection for player:" .. Player_GetDisplayName(World_GetPlayerAt(l_1_5))[1] .. "\nCheck map description. Mission aborted!"), 10)
+      if Marker_Exists("mkr_rotate", "") then
+        Camera_AutoRotate(Util_GetPosition(mkr_rotate), 30, 47, 1.5)
+        FOW_RevealArea(Util_GetPosition(mkr_rotate), 20, -1)
+      end
+      return false
+    end
+  end
+  _JointOps_AIList = {}
+  for l_1_9 = 1, World_GetPlayerCount() do
+    local l_1_10 = World_GetPlayerAt(l_1_9)
+    if not Player_IsHuman(l_1_10) then
+      table.insert(_JointOps_AIList, Player_GetID(l_1_10))
+    end
+    Player_SetResource(l_1_10, RT_Manpower, 0)
+    Player_SetResource(l_1_10, RT_Munition, 0)
+    Player_SetResource(l_1_10, RT_Fuel, 0)
+    Player_SetResource(l_1_10, RT_Action, 0)
+    Player_SetResource(l_1_10, RT_Command, 0)
+    Player_SetEntityProductionAvailability(l_1_10, EBP.ALLIES.TANK_TRAP, ITEM_REMOVED)
+    Modify_EntityBuildTime(l_1_10, EBP.ALLIES.BARBED_WIRE, 3)
+    Modify_EntityBuildTime(l_1_10, EBP.ALLIES.SANDBAG, 3)
+    Modify_EntityBuildTime(l_1_10, EBP.ALLIES.TANK_TRAP, 3)
+    Player_SetEntityProductionAvailability(l_1_10, EBP.AXIS.TANK_TRAP, ITEM_REMOVED)
+    Modify_EntityBuildTime(l_1_10, EBP.AXIS.BARBED_WIRE, 3)
+    Modify_EntityBuildTime(l_1_10, EBP.AXIS.SANDBAG, 3)
+    Modify_EntityBuildTime(l_1_10, EBP.ALLIES.TANK_TRAP, 3)
+    Modify_EntityBuildTime(l_1_10, EBP.CW.BARBED_WIRE, 3)
+    Modify_EntityBuildTime(l_1_10, EBP.CW.SANDBAG, 3)
+    Player_SetEntityProductionAvailability(l_1_10, EBP.ELITE.TANK_TRAP, ITEM_REMOVED)
+    Modify_EntityBuildTime(l_1_10, EBP.ELITE.BARBED_WIRE, 3)
+    Modify_EntityBuildTime(l_1_10, EBP.ELITE.SANDBAG, 3)
+    Player_SetConstructionMenuAvailability(l_1_10, "tp_construction_rifleman_basic", ITEM_REMOVED)
+    Player_SetConstructionMenuAvailability(l_1_10, "tp_construction_axis_infantry_basic", ITEM_REMOVED)
+  end
+  _spost = ""
+  JO_SKIRMISH = JointOps_IsSkirmish()
+  _JointOps_MapEvents = {}
+  wire_used = false
+  sandbags_used = false
+  
+  return true
+end
+
+JointOps_Util_GlobalMessage = function(l_15_0, l_15_1, l_15_2, l_15_3)
+  if l_15_2 == nil then
+    l_15_2 = 1
+  end
+  if l_15_3 == nil then
+    l_15_3 = 2
+  end
+  do
+    Util_StartIntel(function()
+    -- upvalues: l_15_0 , l_15_2 , l_15_1 , l_15_3
+    CTRL.Game_TextTitleFade(l_15_0, l_15_2, l_15_1, l_15_3, "")
+    CTRL.WAIT()
+  end)
+  end
+   -- DECOMPILER ERROR: Confused about usage of registers for local variables.
+
+end
+
+JointOps_Util_CreateLocString = function(l_14_0)
+  local l_14_1 = LOC(l_14_0)
+  l_14_1[1] = l_14_0
+  return l_14_1
+end
+
+JointOps_EndGame = function()
+  World_SetGameOver()
+end
+
+JointOps_IsSkirmish = function()
+  local l_13_0 = 0
+  for l_13_4 = 1, World_GetPlayerCount() do
+    if not Player_IsHuman(World_GetPlayerAt(l_13_4)) then
+      l_13_0 = l_13_0 + 1
+    end
+  end
+  if l_13_0 == World_GetPlayerCount() - 1 then
+    return true
+  else
+    return false
+  end
+end
+
+JointOps_AddEvent = function(l_3_0)
+  table.insert(_JointOps_MapEvents, Stats_TotalDuration() .. ":" .. l_3_0)
+end
+
+JointOps_InitEnemySquadManager = function(l_8_0)
+  JOINTOPS_ENEMY = l_8_0
+  for l_8_4 = 1, table.getn(JOINTOPS_ENEMY_TROOPS) do
+    if JOINTOPS_ENEMY_TROOPS[l_8_4].respawn_delay == nil then
+      JOINTOPS_ENEMY_TROOPS[l_8_4].respawn_delay = 1
+    end
+  end
+  JointOps_ManageEnemySquads(true)
+  Rule_AddInterval(JointOps_ManageEnemySquads, 30)
+end
+
+JointOps_ManageEnemySquads = function(l_9_0)
+	local l_9_1 = 0
+	do
+		local l_9_2 = nil
+		for l_9_6 = table.getn(JOINTOPS_ENEMY_TROOPS), 1, -1 do
+			local l_9_7 = JOINTOPS_ENEMY_TROOPS[l_9_6]
+			local l_9_8 = SGroup_CreateIfNotFound(l_9_7.sgroup)
+			
+			if SGroup_IsEmpty(l_9_8) then
+				if l_9_7.respawn_delay > 0 then
+					l_9_7.respawn_delay = l_9_7.respawn_delay - 1
+				end
+				local l_9_9 = true
+				if l_9_7.respawn_time == nil and l_9_0 == nil then
+					l_9_9 = false
+					table.remove(JOINTOPS_ENEMY_TROOPS, l_9_6)
+				elseif l_9_7.requirement ~= nil and (EGroup_IsEmpty(l_9_7.requirement) or World_OwnsEntity(EGroup_GetSpawnedEntityAt(l_9_7.requirement, 1)) or Entity_GetPlayerOwner(EGroup_GetSpawnedEntityAt(l_9_7.requirement, 1)) ~= JOINTOPS_ENEMY) then
+					l_9_9 = false
+					table.remove(JOINTOPS_ENEMY_TROOPS, l_9_6)
+				end
+				if l_9_9 and l_9_7.respawn_delay == 0 then
+					if l_9_7.respawn_time ~= nil then
+						l_9_7.respawn_delay = l_9_7.respawn_time * 2
+					end
+					local l_9_10 = l_9_7.sbp[World_GetRand(1, table.getn(l_9_7.sbp))]
+					local l_9_11 = l_9_7.mkr[World_GetRand(1, table.getn(l_9_7.mkr))]
+					if l_9_0 == true then
+						l_9_10 = l_9_7.sbp[1]
+						l_9_11 = l_9_7.mkr[1]
+					end
+					Util_CreateSquads(JOINTOPS_ENEMY, l_9_8, l_9_10, l_9_11)
+					if l_9_7.findcover ~= nil and l_9_7.findcover == true then
+						Cmd_Move(l_9_8, Squad_FindCover(SGroup_GetSpawnedSquadAt(l_9_8, 1), Util_GetPosition(l_9_8), 5))
+					end
+					if l_9_7.calm ~= nil and l_9_7.calm == true then
+						SGroup_SetMoodMode(l_9_8, MM_ForceCalm)
+					end
+					if l_9_7.camo ~= nil and l_9_7.camo == true then
+						if l_9_7.sbp == SBP.AXIS.SNIPER then
+							Cmd_Ability(sg_temp, BP_GetAbilityBlueprint("abilities/camouflage_toggled_sniper.lua"))
+						end
+					else if l_9_7.sbp == SBP.ALLIES.SNIPER then
+						Cmd_Ability(sg_temp, BP_GetAbilityBlueprint("abilities/camouflage_toggled_sniper_allied.lua"))
+					end
+				end
+				if l_9_7.upgrade == nil then
+					if l_9_10 == SBP.ALLIES.HALFTRACK then
+						Cmd_Upgrade(l_9_8, UPG.ALLIES.HALFTRACK_QUAD, 1, true)
+					else if l_9_10 == SBP.ALLIES.GREYHOUND then
+						Cmd_Upgrade(l_9_8, UPG.ALLIES.GREYHOUND_MG, 1, true)
+					end
+					if World_GetRand(1, 2) == 1 then
+						Cmd_Upgrade(l_9_8, UPG.ALLIES.GREYHOUND_ARMOR, 1, true)
+					end
+				else if l_9_10 == SBP.ALLIES.SHERMAN then
+					Cmd_Upgrade(l_9_8, UPG.ALLIES.SHERMAN_MG, 1, true)
+				end
+			else
+				Cmd_Upgrade(l_9_8, l_9_7.upgrade[World_GetRand(1, table.getn(l_9_7.upgrade))], 1, true)
+			end
+			
+			if l_9_7.role == "patrol" then
+				JointOps_TroopPathSetup(l_9_7)
+			elseif l_9_7.role == "defend" and l_9_7.defpos ~= nil and l_9_7.instant_setup == nil then
+				local l_9_12 = l_9_7.defpos[World_GetRand(1, table.getn(l_9_7.defpos))]
+				if scartype(l_9_12) == ST_EGROUP and not EGroup_IsEmpty(l_9_12) then
+					Cmd_AttackMove(l_9_8, Util_GetPosition(l_9_12))
+					Cmd_Garrison(l_9_8, l_9_12, false, true)
+				end
+				else if scartype(l_9_12) == ST_MARKER then
+					Cmd_AttackMove(l_9_8, Util_GetPosition(l_9_12))
+				end
+			end
+			if l_9_7.instant_setup ~= nil and l_9_7.instant_setup == true then
+				Cmd_InstantSetupTeamWeapon(l_9_8)
+			end
+			if l_9_7.walk ~= nil and l_9_7.walk == true then
+				SGroup_SetMoveType(l_9_8, MOVETYPE.SAFE)
+			end
+			if l_9_7.speed ~= nil then
+				Modify_UnitSpeed(l_9_8, l_9_7.speed)
+			end
+			if l_9_7.vulnerability ~= nil then
+				Modify_Vulnerability(l_9_8, l_9_7.vulnerability)
+			end
+			if l_9_7.damage ~= nil then
+				Modify_WeaponDamage(l_9_8, "hardpoint_01", l_9_7.damage)
+			end
+			if l_9_7.range ~= nil then
+				Modify_WeaponRange(l_9_8, "hardpoint_01", l_9_7.range)
+			end
+			if l_9_7.cooldown ~= nil then
+				Modify_WeaponCooldown(l_9_8, "hardpoint_01", l_9_7.cooldown)
+			end
+		end
+		
+		if l_9_7.vet ~= nil then
+			SGroup_IncreaseVeterancyRank(l_9_8, l_9_7.vet, true)
+		end
+	elseif l_9_7.revenge ~= nil and l_9_7.revenge == true and (SGroup_IsUnderAttack(l_9_8, ANY,20) or SGroup_IsDoingAttack(l_9_8, ANY, 20)) then
+		local l_9_13 = SGroup_CreateIfNotFound("sg_attacker")
+		SGroup_Clear(l_9_13)
+		SGroup_GetLastAttacker(l_9_8, l_9_13)
+		if not SGroup_IsEmpty(l_9_13) then
+			Cmd_Attack(l_9_8, l_9_13)
+			Cmd_AttackMove(l_9_8, l_9_7.mkr[World_GetRand(1, table.getn(l_9_7.mkr))], true)
+		end
+		elseif l_9_7.role == "patrol" and SGroup_IsIdle(l_9_8, ALL) then
+			JointOps_TroopPathSetup(l_9_7)
+		end
+		if SGroup_IsUnderAttack(l_9_8, ANY, 20) then
+			if l_9_7.walk ~= nil and l_9_7.walk == true then
+				l_9_7.walk = nil
+				SGroup_SetMoveType(l_9_8, MOVETYPE.NORMAL)
+			end
+		end
+		if JointOps_EnemyCallBackup ~= nil then
+			l_9_1 = l_9_1 + 1
+			local l_9_14 = SGroup_CreateIfNotFound("sg_attacker")
+			SGroup_Clear(l_9_14)
+			SGroup_GetLastAttacker(l_9_8, l_9_14)
+			if not SGroup_IsEmpty(l_9_14) then
+				l_9_2 = Util_GetPosition(l_9_14)
+			end
+		end
+		if l_9_2 ~= nil and JOINTOPS_CALLBACKUP_TRIGGER_COUNT ~= nil and JOINTOPS_CALLBACKUP_TRIGGER_COUNT <= l_9_1 then
+			JointOps_EnemyCallBackup(l_9_8, l_9_2)
+		end
+	end
+end
+     -- WARNING: missing end command somewhere! Added here
+  end
+end
+
+JointOps_TroopPathSetup = function(l_10_0)
+  local l_10_1 = false
+  if l_10_0.path_reverse ~= nil and l_10_0.path_reverse == true then
+    l_10_1 = true
+  end
+  local l_10_2 = 0
+  if l_10_0.path_waypoint_pause ~= nil then
+    l_10_2 = l_10_0.path_waypoint_pause
+  end
+  local l_10_3 = LOOP_NORMAL
+  if l_10_0.path_toggle ~= nil and l_10_0.path_toggle == true then
+    l_10_3 = LOOP_TOGGLE_DIRECTION
+  end
+  Cmd_SquadPath(SGroup_CreateIfNotFound(l_10_0.sgroup), l_10_0.path, true, l_10_3, true, l_10_2, nil, true, l_10_1)
+end

@@ -1,0 +1,1507 @@
+import("jointops.scar")
+
+function OnGameSetup()
+	-- Disable the default wincondition
+	g_CheckAnnihilate = false
+	-- Allied NPCs
+	ALLIES = World_GetPlayerAt(1)
+	-- Axis NPC
+	AXIS = World_GetPlayerAt(2)
+	Setup_SetPlayerTeam(AXIS, 1)
+	-- Axis players
+	player1 = World_GetPlayerAt(3)
+	player2 = World_GetPlayerAt(4)
+end
+
+function OnInit()
+	if not JointOps_Init("axis", 4) then return end
+	
+	-- Make sure that the needed sounds play
+	SOUNDS =
+	{
+		SUBALERT = "subalert",
+		POWERDOWN = "power",
+		POWERUP = "power2",
+		RAID = "Ambiences/Ambiences_Streamed/CXP2/SP/Air_Raid",
+		INTRO = "music/dasboot_intro",
+		RADIO = "radio",
+		SPYRADIO = "spyradio",
+		FLYBY = "flyby",
+		RADIOMSG = "speech/mp/axis/bld/orderconfirmations/select/xl_bld_sel_obpge0_nt_s",
+		ENEMYADVANCING = "speech/mp/axis/gan/intel/enemyinsector/xb_gan_ems_gengen_nt_s",
+		ENEMYINBASE = "speech/mp/axis/gan/intel/hqattack/xb_gan_hqa_gengen_nt_s",
+	}
+	for key, value in pairs(SOUNDS) do Sound_PreCacheSound(value) end
+	
+	-- Check if playing alone
+	local aicount = 0
+	for i = 1, World_GetPlayerCount() do
+		if not Player_IsHuman(World_GetPlayerAt(i)) then
+			aicount = aicount + 1
+		end
+	end
+	if aicount == 3 then
+		SKIRMISH = true
+		SUB_CAPTURE_MINUTES = 4
+	else
+		SKIRMISH = false
+		SUB_CAPTURE_MINUTES = 3
+	end
+	
+	-- Reveal important areas
+	for i = 1, 13 do FOW_RevealMarker(Marker_FromName("mkr_fow"..i, "grey_marker"), -1) end
+	
+	-- Upgrade default bunkers
+	Cmd_InstantUpgrade(eg_bunkers, UPG.AXIS.BUNKER_MG42, 1)
+	
+	-- Setup stuff
+	Mission_SetupPlayers()
+	
+	-- Attack routes
+	ATTACK_ROUTES =
+	{
+		ARMOR =
+		{
+			{mkr_entry3,mkr_wp31,mkr_wp38,mkr_wp41,mkr_creep7},
+			{mkr_entry3,mkr_wp30,mkr_wp45,mkr_wp52},
+			{mkr_entry2,mkr_wp10,mkr_wp12,mkr_wp6},
+			{mkr_entry6,mkr_wp28,mkr_wp8,mkr_wp5},
+			{mkr_entry1,mkr_wp10,mkr_wp46,mkr_wp43},
+			{mkr_entry3, mkr_wp29, mkr_wp13, mkr_wp14},
+		},
+		INFANTRY =
+		{
+			-- bottom
+			{mkr_entry3, mkr_wp17, mkr_c3, mkr_trench7, mkr_wp41, mkr_wp45, mkr_c15, mkr_wp3, mkr_crewthreat},
+			{mkr_entry3, mkr_wp17, mkr_c3, mkr_trench9, mkr_wp42, mkr_wp49, mkr_c15, mkr_wp3, mkr_crewthreat},
+			{mkr_entry3, mkr_wp17, mkr_c2, mkr_wp47, mkr_wp5, mkr_c16, mkr_wp3, mkr_crewthreat},
+			{mkr_entry3, mkr_c2, mkr_trench6, mkr_wp7, mkr_wp1, mkr_crewthreat},
+			
+			-- center
+			{mkr_entry2, mkr_c5, mkr_c8, mkr_wp7, mkr_wp1, mkr_crewthreat},
+			{mkr_entry2, mkr_trench6, mkr_c8, mkr_wp5, mkr_c16, mkr_wp3, mkr_crewthreat},
+			{mkr_entry2, mkr_wp5, mkr_c15, mkr_wp3, mkr_crewthreat},
+			{mkr_entry2, mkr_wp29, mkr_wp14, mkr_wp3, mkr_crewthreat},
+			
+			-- top
+			{mkr_entry1, mkr_c5, mkr_trench2, mkr_c1, mkr_wp5, mkr_wp3, mkr_crewthreat},
+			{mkr_entry1, mkr_trench3, mkr_wp14, mkr_wp3, mkr_crewthreat},
+			{mkr_entry1, mkr_wp24, mkr_trench1, mkr_wp14, mkr_wp3, mkr_crewthreat},
+			{mkr_entry1, mkr_wp9, mkr_wp13, mkr_wp3, mkr_crewthreat},
+			
+			-- beach
+			{mkr_entry6, mkr_wp25, mkr_trench3, mkr_wp14, mkr_wp3, mkr_crewthreat},
+			{mkr_entry6, mkr_wp25, mkr_wp13, mkr_wp3, mkr_crewthreat},
+		},
+	}
+	
+	-- Replace generators
+	eg_all_generators = EGroup_CreateIfNotFound("eg_all_generators")
+	for i = 1, EGroup_CountAlive(eg_generators) do
+		local ent = EGroup_GetSpawnedEntityAt(eg_generators, i)
+		local epos = Entity_GetPosition(ent)
+		
+		eg_generator = EGroup_CreateIfNotFound("eg_generator"..i)
+		Util_CreateEntities(AXIS, eg_generator, BP_GetEntityBlueprint("ebps/environment/custom/generator"), epos, 1)
+		EGroup_SetInvulnerable(eg_generator, 0.3)
+	end
+	EGroup_DestroyAllEntities(eg_generators)
+	
+	-- Misc
+	ABILITY_CAMO = BP_GetAbilityBlueprint("abilities/camouflage_toggled_sniper_allied.lua")
+	ABILITY_CRAB = BP_GetAbilityBlueprint("abilities/sherman_crab_mine_clearing.lua")
+	ABILITY_HEROIC_CHARGE = BP_GetAbilityBlueprint("abilities/commonwealth_lt_heroic_charge_ability.lua")
+	EGroup_SetInvulnerable(eg_radio, true)
+	locstr_uboat_capture = JointOps_Util_CreateLocString("U-boat is getting captured!")
+	EGroup_SetInvulnerable(eg_harbortraps, true)
+	
+	-- Power check
+	power_loss = false
+	power_blips = {}
+	locstr_power_lost = JointOps_Util_CreateLocString("Base is low on power\nU-boat repairs slowed!")
+	locstr_power_restored = JointOps_Util_CreateLocString("Base power restored\nRepairs back to normal")
+	locstr_power_obj = JointOps_Util_CreateLocString("Low power: repair broken generators")
+	Rule_AddInterval(ObjectiveCheck_Power, 10)
+	
+	-- Start objectives
+	ObjectiveStart_Captain()
+	ObjectiveStart_Uboat()
+	ObjectiveStart_RepairCrew()
+	
+	Mission_SetupBase()
+	
+	-- Start the intro
+	Camera_MoveToPosition(Util_GetOffsetPosition(mkr_intro, OFFSET_FRONT, 35))
+	Camera_SetZoomDist(1)
+	Camera_SetOrbit(-1.142)
+	Camera_SetDeclination(0.138)
+	Mission_PlayIntro()
+
+	-- Fix for the AI problem created by patch 2.501
+	AI_EnableAll(false)
+	if not Player_IsHuman(player1) then AI_Enable(player1, true) end
+	if not Player_IsHuman(player2) then AI_Enable(player2, true) end
+end
+
+Scar_AddInit(OnInit)
+
+-------------------------------------------------------------------------------
+-- ATTACKS --------------------------------------------------------------------
+-------------------------------------------------------------------------------
+
+function Attacks_Armor()
+	-- Light armor
+	for i = 1, DIF_LIGHT_ARMOR_LIMIT do
+		local sg_temp = SGroup_CreateIfNotFound("sg_light_armor" .. i)
+		
+		-- If empty then spawn and give attack route
+		if SGroup_IsEmpty(sg_temp) then
+			local route = ATTACK_ROUTES.ARMOR[World_GetRand(1, table.getn(ATTACK_ROUTES.ARMOR))]
+			
+			Util_SpawnArmor(sg_temp, route[1], DIF_SBP_LIGHT_ARMOR[World_GetRand(1, table.getn(DIF_SBP_LIGHT_ARMOR))])
+			
+			-- Attack move
+			for j = 2, table.getn(route) do
+				Cmd_AttackMove(sg_temp, route[j], true)
+			end
+			
+			-- Attach to patrol route in the end
+			Cmd_SquadPath(sg_temp, "path_base2", true, LOOP_NORMAL, true, 0, nil, true)
+		end
+	end
+	
+	-- Medium armor
+	for i = 1, DIF_MEDIUM_ARMOR_LIMIT do
+		local sg_temp = SGroup_CreateIfNotFound("sg_medium_armor" .. i)
+		
+		-- If empty then spawn and give attack route
+		if SGroup_IsEmpty(sg_temp) then
+			local route = ATTACK_ROUTES.ARMOR[World_GetRand(1, table.getn(ATTACK_ROUTES.ARMOR))]
+			
+			Util_SpawnArmor(sg_temp, route[1], DIF_SBP_MEDIUM_ARMOR[World_GetRand(1, table.getn(DIF_SBP_MEDIUM_ARMOR))])
+			
+			-- Attack move
+			for j = 2, table.getn(route) do
+				Cmd_AttackMove(sg_temp, route[j], true)
+			end
+			
+			-- Attach to patrol route in the end
+			Cmd_SquadPath(sg_temp, "path_base2", true, LOOP_NORMAL, true, 0, nil, true)
+		end
+	end
+	
+	-- Heavy armor
+	for i = 1, DIF_HEAVY_ARMOR_LIMIT do
+		local sg_temp = SGroup_CreateIfNotFound("sg_heavy_armor" .. i)
+		
+		-- If empty then spawn and give attack route
+		if SGroup_IsEmpty(sg_temp) then
+			local route = ATTACK_ROUTES.ARMOR[World_GetRand(1, table.getn(ATTACK_ROUTES.ARMOR))]
+			
+			Util_SpawnArmor(sg_temp, route[1], DIF_SBP_HEAVY_ARMOR[World_GetRand(1, table.getn(DIF_SBP_HEAVY_ARMOR))])
+			
+			-- Attack move
+			for j = 2, table.getn(route) - 1 do
+				Cmd_AttackMove(sg_temp, route[j], true)
+			end
+			
+			Cmd_AttackMove(sg_temp, route[table.getn(route)], true, nil, 8)
+			
+			-- Attach to patrol route in the end
+			Cmd_SquadPath(sg_temp, "path_base2", true, LOOP_NORMAL, true, 0, nil, true)
+		end
+	end
+	
+	status_armor = status_armor + 1
+end
+
+SQUADS_US_INF = {}
+SQUADS_CW_INF = {}
+setmetatable(SQUADS_US_INF, {__index = function(t, k) t[k] = {} return t[k] end})
+setmetatable(SQUADS_CW_INF, {__index = function(t, k) t[k] = {} return t[k] end})
+
+function Attacks_Infantry()
+	-- USA INFANTRY
+	local ability_uses = 0
+	for i = 1, DIF_US_INF_LIMIT do
+		local sg_temp = SGroup_CreateIfNotFound("sg_usa_inf" .. i)
+		
+		-- If empty then spawn and give attack route
+		if SGroup_IsEmpty(sg_temp) then
+			local route = ATTACK_ROUTES.INFANTRY[World_GetRand(1, table.getn(ATTACK_ROUTES.INFANTRY))]
+			
+			-- Spawn balance between basic and support infantry
+			if World_GetRand(1, 10) <= DIF_US_INF_BALANCE then
+				SQUADS_US_INF[i] = DIF_US_SBP_INF_BASIC[World_GetRand(1, table.getn(DIF_US_SBP_INF_BASIC))]
+			else
+				SQUADS_US_INF[i] = DIF_US_SBP_INF_SUPPORT[World_GetRand(1, table.getn(DIF_US_SBP_INF_SUPPORT))]
+			end
+			Util_SpawnInfantry(sg_temp, route[1], SQUADS_US_INF[i])
+			
+			-- Attack move or sometimes just move
+			for j = 2, table.getn(route) - 1 do
+				if World_GetRand(1, 10) < 8 then
+					Cmd_AttackMove(sg_temp, route[j], true, nil, 8)
+				else
+					Cmd_Move(sg_temp, route[j], true, nil, nil, nil, nil, 8)
+				end
+			end
+			
+			-- Target (small variation)
+			Cmd_AttackMove(sg_temp, route[table.getn(route)], true, nil, 20)
+			
+			-- If alive then use ability if the limit not reached
+		elseif ability_uses < DIF_US_INF_ABILITY_LIMIT then
+			if (SQUADS_US_INF[i] == SBP.ALLIES.RIFLEMEN or SQUADS_US_INF[i] == SBP.ALLIES.RANGER) and SGroup_IsDoingAttack(sg_temp, ANY, 7) then
+				local sg_temptarget = SGroup_CreateIfNotFound("sg_temptarget")
+				SGroup_Clear(sg_temptarget)
+				SGroup_GetLastAttacker(sg_temp, sg_temptarget)
+				
+				-- If we have a alive target then use ability by target type
+				if not SGroup_IsEmpty(sg_temptarget) then
+					ability_uses = ability_uses + 1
+					
+					if Entity_IsVehicle(Squad_EntityAt(SGroup_GetSpawnedSquadAt(sg_temptarget, 1), 0)) then
+						Cmd_Ability(sg_temp, ABILITY.ALLIES.STICKY_BOMB, sg_temptarget, nil, true, false)
+					else
+						Cmd_Ability(sg_temp, ABILITY.ALLIES.GRENADE, sg_temptarget, nil, true, false)
+					end
+					
+					-- Go after the sub after the command queue reset
+					Cmd_AttackMove(sg_temp, mkr_crewthreat, true)
+				end
+			end
+		end
+	end
+	
+	-- BRIT INFANTRY
+	local ability_uses = 0
+	local lieutenant = false
+	for i = 1, DIF_CW_INF_LIMIT do
+		local sg_temp = SGroup_CreateIfNotFound("sg_cw_inf" .. i)
+		
+		-- If empty then spawn and give attack route
+		if SGroup_IsEmpty(sg_temp) then
+			local route = ATTACK_ROUTES.INFANTRY[World_GetRand(1, table.getn(ATTACK_ROUTES.INFANTRY))]
+			
+			SQUADS_CW_INF[i] = DIF_CW_SBP_INF[World_GetRand(1, table.getn(DIF_CW_SBP_INF))]
+			Util_SpawnInfantry(sg_temp, route[1], SQUADS_CW_INF[i])
+			
+			-- Attach one lieutenant every 1½min
+			if status_infantry % 2 and not lieutenant then
+				lieutenant = true
+				next_heroic = status_infantry + 2
+				sg_lieutenant = SGroup_CreateIfNotFound("sg_lieutenant")
+				SGroup_Clear(sg_lieutenant)
+				Util_SpawnInfantry(sg_lieutenant, route[1], SBP.CW.LIEUTENANT)
+				Cmd_Ability(sg_lieutenant, ABILITY.CW.LIEUTENANT_FOLLOW, sg_temp)
+				Cmd_AttackMove(sg_lieutenant, mkr_crewthreat, true)
+			end
+			
+			-- Attack move or sometimes just move
+			for j = 2, table.getn(route) - 1 do
+				if World_GetRand(1, 10) < 8 then
+					Cmd_AttackMove(sg_temp, route[j], true, nil, 8)
+				else
+					Cmd_Move(sg_temp, route[j], true, nil, nil, nil, nil, 8)
+				end
+			end
+			
+			Cmd_AttackMove(sg_temp, route[table.getn(route)], true, nil, 20)
+			-- If alive then use ability if the limit not reached
+		elseif ability_uses < DIF_CW_INF_ABILITY_LIMIT then
+			if (SQUADS_US_INF[i] == SBP.CW.COMMANDOS or SQUADS_US_INF[i] == SBP.CW.COMMANDOS_PIAT) and SGroup_IsDoingAttack(sg_temp, ANY, 7) then
+				local sg_temptarget = SGroup_CreateIfNotFound("sg_temptarget")
+				SGroup_Clear(sg_temptarget)
+				SGroup_GetLastAttacker(sg_temp, sg_temptarget)
+				
+				-- If we have a alive target
+				if not SGroup_IsEmpty(sg_temptarget) then
+					ability_uses = ability_uses + 1
+					Cmd_Ability(sg_temp, ABILITY.ALLIES.GRENADE, sg_temptarget, nil, true, false)
+					
+					-- Go to sub after the command queue reset
+					Cmd_AttackMove(sg_temp, mkr_crewthreat, true)
+				end
+			end
+		end
+	end
+	
+	-- Mortar teams to create smoke cover
+	if DIF_COVERSMOKE_DISABLE ~= true and (status_infantry + 1) % 2 == 0 then
+		for i = 1, 2 do
+			local sg_temp = SGroup_CreateIfNotFound("sg_smokemortar" .. i)
+			
+			-- Spawn if dead
+			if SGroup_IsEmpty(sg_temp) then
+				Util_CreateSquadsAtMarker(ALLIES, sg_temp, SBP.ALLIES.MORTAR, mkr_entry2, 1)
+			end
+			
+			-- Use the smoke ability
+			Cmd_Ability(sg_temp, ABILITY.ALLIES.MORTAR_SMOKE, Marker_FromName("mkr_smokecover"..World_GetRand(1, 7), "grey_marker"), true)
+		end
+	end
+	
+	-- Special handler for latest lieutenant
+	if status_infantry >= next_heroic and not SGroup_IsEmpty(sg_lieutenant) and SGroup_IsUnderAttack(sg_lieutenant, ANY, 5) then
+		next_heroic = status_infantry + World_GetRand(2, 6)
+		Cmd_Ability(sg_lieutenant, ABILITY_HEROIC_CHARGE, nil, nil, true)
+	end
+	
+	-- Every 2 min move all retreated troops if any
+	if status_infantry % 4 == 0 then
+		local sg_troopcheck = SGroup_CreateIfNotFound("sg_troopcheck")
+		SGroup_Clear(sg_troopcheck)
+		Player_GetAllSquadsNearMarker(ALLIES, sg_troopcheck, Util_GetPosition(mkr_entry3), 15)
+		
+		if not SGroup_IsEmpty(sg_troopcheck) then
+			Cmd_AttackMove(sg_troopcheck, mkr_crewthreat)
+		end
+	end
+	
+	status_infantry = status_infantry + 1
+end
+
+function Attacks_Special()
+	-- Bombers with random interval
+	if maptime > 10 and World_GetRand(1, DIF_BOMBER_THRESHOLD) == 1 then
+		local target = Util_GetPosition(mkr_arty1)
+		target.x = target.x + World_GetRand(-130, 130)
+		target.z = target.z + World_GetRand(-130, 130)
+		
+		Cmd_Ability(ALLIES, ABILITY.CW.TYPHOON_ROCKET, target, target, true)
+	end
+	
+	-- Random snipers behind the lines every 10 min
+	if status_special % 20 == 0 then
+		sg_sniper = SGroup_CreateIfNotFound("sg_sniper")
+		Util_CreateSquadsAtMarker(ALLIES, sg_sniper, SBP.ALLIES.SNIPER, SNIPER_LOCATIONS[World_GetRand(1, table.getn(SNIPER_LOCATIONS))], 1)
+		Cmd_Ability(sg_sniper, BP_GetAbilityBlueprint("abilities/camouflage_toggled_sniper.lua"))
+		Cmd_AttackMove(sg_sniper, mkr_crewthreat)
+	end
+	
+	-- Commandos
+	if maptime > 15 and (status_special + 2) % 8 == 0 then
+		local landing = GLIDER_LOCATIONS[World_GetRand(1, table.getn(GLIDER_LOCATIONS))]
+		glider = Player_SpawnGlider(ALLIES, BP_GetEntityBlueprint("ebps/races/allies_commonwealth/buildings/glider_empty.lua"), Util_GetPosition(landing), Util_GetPosition(landing))
+		Rule_AddEntityEvent(Mission_GliderDown, glider, GE_SpawnActionComplete)
+	end
+	
+	-- Convoy
+	if maptime > 8 and (status_special + 1) % 9 == 0 then
+		Mission_HarborAttack_Convoy()
+	end
+	
+	-- Paratroops
+	if maptime > 15 and (status_special + 3) % 9 == 0 then
+		Mission_DirectArty()
+		Mission_HarborAttack_Paratroopers()
+	end
+	
+	-- Boats
+	if maptime > 20 and (status_special + 5) % 11 == 0 then
+		Mission_DirectArty()
+		Mission_HarborAttack_Boats()
+	end
+	
+	-- More arty near end
+	if maptime > 30 then
+		Mission_RandomArty()
+	end
+	
+	status_special = status_special + 1
+end
+
+-------------------------------------------------------------------------------
+-- MISSION RELATED GENERAL STUFF ----------------------------------------------
+-------------------------------------------------------------------------------
+
+function EventManager()
+	if maptime == 1 then
+		SNIPER_LOCATIONS = {mkr_wp53, mkr_wp60, mkr_wp42, mkr_creep4, mkr_beach3}
+		GLIDER_LOCATIONS = {mkr_wp39, mkr_base2, mkr_wp52, mkr_wp44, mkr_c9, mkr_base3, mkr_wp13, mkr_wp15, mkr_wp50, mkr_wp46, mkr_wp38, mkr_wp8, mkr_base3}
+		
+		DIF_INF_VET_MAX = 0
+		
+		DIF_BOMBER_THRESHOLD = 5
+		
+		DIF_US_INF_LIMIT = 4
+		DIF_US_INF_BALANCE = 8
+		DIF_US_INF_ABILITY_LIMIT = 2
+		DIF_US_SBP_INF_BASIC = {SBP.ALLIES.RIFLEMEN, SBP.ALLIES.RIFLEMEN, SBP.ALLIES.RANGER}
+		DIF_US_SBP_INF_SUPPORT = {SBP.ALLIES.MORTAR, SBP.ALLIES.HEAVYMG, SBP.ALLIES.ENGINEER}
+		
+		DIF_CW_INF_LIMIT = 2
+		DIF_CW_INF_ABILITY_LIMIT = 1
+		DIF_CW_SBP_INF = {SBP.CW.TOMMIES}
+		
+		next_heroic = 0
+		status_infantry = 0
+		Attacks_Infantry()
+		Rule_AddInterval(Attacks_Infantry, 30)
+	elseif maptime == 3 then
+		Rule_AddInterval(Mission_Flares, 20)
+		DIF_INF_SUPPRESION_BONUS = true
+		
+		DIF_ARMOR_VET_MAX = 0
+		
+		DIF_LIGHT_ARMOR_LIMIT = 2
+		DIF_SBP_LIGHT_ARMOR = {SBP.ALLIES.JEEP, SBP.CW.BREN_CARRIER, SBP.CW.COMMANDOS_JEEP, SBP.CW.STUART}
+		
+		DIF_MEDIUM_ARMOR_LIMIT = 1
+		DIF_SBP_MEDIUM_ARMOR = {SBP.ALLIES.AT_57MM}
+		
+		DIF_HEAVY_ARMOR_LIMIT = 0
+		
+		status_armor = 0
+		Rule_AddDelayedInterval(Attacks_Armor, 45, 15)
+	elseif maptime == 5 then
+		status_special = 0
+		Rule_AddInterval(Attacks_Special, 60)
+		
+		DIF_US_INF_THOMPSONS = true
+	elseif maptime == 7 then
+		DIF_INF_VET_MAX = 1
+		
+		breach_side = World_GetRand(1, 2)
+		if breach_side == 1 then Rule_AddOneShot(Mission_BreachForest, World_GetRand(60, 180)) else Rule_AddOneShot(Mission_BreachAirfield, World_GetRand(60, 180)) end
+	elseif maptime == 10 then
+		DIF_INF_RANGE_BONUS = true
+		DIF_US_INF_BAZOOKAS = true
+	elseif maptime == 14 then
+		DIF_INF_VET_MAX = 2
+		
+		DIF_MEDIUM_ARMOR_LIMIT = 3
+		DIF_SBP_MEDIUM_ARMOR = {SBP.ALLIES.HALFTRACK, SBP.ALLIES.GREYHOUND, SBP.ALLIES.AT_57MM}
+	elseif maptime == 20 then
+		DIF_CW_SBP_INF = {SBP.CW.TOMMIES, SBP.CW.COMMANDOS}
+		DIF_BOMBER_THRESHOLD = 4
+		DIF_COVERSMOKE_DISABLE = true
+		Rule_AddOneShot(ObjectiveStart_Equipment, World_GetRand(60, 180))
+	elseif maptime == 24 then
+		if breach_side == 1 then Rule_AddOneShot(Mission_BreachAirfield, World_GetRand(60, 180)) else Rule_AddOneShot(Mission_BreachForest, World_GetRand(60, 180)) end
+		DIF_HEAVY_ARMOR_LIMIT = 3
+		DIF_SBP_HEAVY_ARMOR = {SBP.ALLIES.SHERMAN, SBP.ALLIES.M10, SBP.CW.CROMWELL, SBP.CW.CHURCHILL, SBP.CW.CHURCHILL_CROC}
+	elseif maptime == 30 then
+		DIF_INF_VET_MAX = 3
+		DIF_MEDIUM_ARMOR_LIMIT = 2
+	elseif maptime == 40 then
+		DIF_BOMBER_THRESHOLD = 3
+		DIF_INF_VET_MAX = 3
+		
+		DIF_SBP_HEAVY_ARMOR = {SBP.ALLIES.SHERMAN, SBP.ALLIES.M10, SBP.CW.CROMWELL, SBP.CW.CHURCHILL, SBP.CW.CHURCHILL_CROC, SBP.CW.FIREFLY, SBP.ALLIES.PERSHING}
+	elseif maptime == 50 then
+		DIF_BOMBER_THRESHOLD = 2
+		DIF_ARMOR_VET_MAX = 3
+	end
+	
+	maptime = maptime + 1
+end
+
+function Mission_GliderDown(executer, squad, pos)
+	sg_gliderattack = SGroup_CreateIfNotFound("sg_gliderattack")
+	SGroup_Clear(sg_gliderattack)
+	Util_CreateSquadsAtMarker(ALLIES, sg_gliderattack, SBP.CW.COMMANDOS, pos, 1)
+	Cmd_Upgrade(sg_gliderattack, UPG.ALLIES.RIFLEMEN_AT, World_GetRand(1, 2), true)
+	Cmd_AttackMove(sg_gliderattack, mkr_crewthreat)
+	
+	sg_gliderattack_lt = SGroup_CreateIfNotFound("sg_gliderattack_lt")
+	SGroup_Clear(sg_gliderattack_lt)
+	Util_CreateSquadsAtMarker(ALLIES, sg_gliderattack_lt, SBP.CW.LIEUTENANT, pos, 1)
+	Cmd_Ability(sg_gliderattack_lt, ABILITY.CW.LIEUTENANT_FOLLOW, sg_gliderattack)
+	Cmd_AttackMove(sg_gliderattack, mkr_crewthreat, true)
+end
+
+function Mission_SetupBase()
+	local INF_SBP = {SBP.AXIS.GRENADIER, SBP.AXIS.VOLKSGRENADIER, SBP.ELITE.PANZERGRENADIER, SBP.ELITE.ASSAULTGRENADIER}
+	local VEH_SBP = {SBP.AXIS.MOTORCYCLE, SBP.ELITE.ARMOURCAR_221, SBP.ELITE.HALFTRACK_250}
+	local TROOPS =
+	{
+		{mkr = mkr_wp50, path = "path_base2", sbp = INF_SBP[World_GetRand(1, table.getn(INF_SBP))]},
+		{mkr = mkr_wp39, path = "path_base2", sbp = INF_SBP[World_GetRand(1, table.getn(INF_SBP))]},
+		{mkr = mkr_wp31, path = "path_base2", sbp = INF_SBP[World_GetRand(1, table.getn(INF_SBP))]},
+		{mkr = mkr_wp12, path = "path_base2", sbp = INF_SBP[World_GetRand(1, table.getn(INF_SBP))]},
+		{mkr = mkr_wp5,  path = "path_base2", sbp = INF_SBP[World_GetRand(1, table.getn(INF_SBP))]},
+		{mkr = mkr_fow2, path = nil, sbp = INF_SBP[World_GetRand(1, table.getn(INF_SBP))]},
+		{mkr = mkr_wp61, path = nil, sbp = INF_SBP[World_GetRand(1, table.getn(INF_SBP))]},
+		{mkr = mkr_c15,  path = nil, sbp = SBP.AXIS.STORMTROOPER},
+		{mkr = mkr_c8,   path = nil, sbp = SBP.ELITE.FALLSCHIRMJAGER},
+		
+		{mkr = mkr_base2, path = "path_base1", sbp = VEH_SBP[World_GetRand(1, table.getn(VEH_SBP))]},
+		{mkr = mkr_base3, path = nil, sbp = VEH_SBP[World_GetRand(1, table.getn(VEH_SBP))]},
+		{mkr = mkr_base4, path = "path_base1", sbp = VEH_SBP[World_GetRand(1, table.getn(VEH_SBP))]},
+		{mkr = mkr_base5, path = "path_base1", sbp = VEH_SBP[World_GetRand(1, table.getn(VEH_SBP))]},
+	}
+	
+	for i = 1, table.getn(TROOPS) do
+		sg_unit = SGroup_CreateIfNotFound("sg_unit" .. i)
+		Util_CreateSquadsAtMarker(AXIS, sg_unit, TROOPS[i].sbp, TROOPS[i].mkr, 1)
+		if TROOPS[i].path ~= nil then Cmd_SquadPath(sg_unit, TROOPS[i].path, true, LOOP_NORMAL, true, 0) end
+	end
+end
+
+function Mission_InfiltrateBase()
+	if status_infiltrate == nil then
+		status_infiltrate = 1
+		Rule_AddInterval(Mission_InfiltrateBase, 1)
+		
+		sg_attack1 = SGroup_CreateIfNotFound("sg_attack1")
+		Util_CreateSquadsAtMarker(ALLIES, sg_attack1, SBP.ALLIES.RIFLEMEN, mkr_radio5, 1)
+		Util_CreateSquadsAtMarker(ALLIES, sg_attack1, SBP.ALLIES.RANGER, mkr_drop3, 1)
+	elseif status_infiltrate == 2 then
+		Sound_Play2D(SOUNDS.ENEMYADVANCING)
+		Cmd_Attack(sg_attack1, sg_captain, true)
+	elseif status_infiltrate == 34 then
+		sg_unit = SGroup_CreateIfNotFound("sg_unit1")
+		SGroup_SetPlayerOwner(sg_unit, ALLIES)
+		UI_CreateMinimapBlip(sg_unit, 5, BT_CombatPing)
+		Modify_ReceivedSuppression(sg_unit, 0)
+		Cmd_Attack(sg_unit, sg_captain)
+		Sound_Play2D(SOUNDS.SUBALERT)
+	elseif status_infiltrate == 35 then
+		Sound_Play2D(SOUNDS.ENEMYINBASE)
+		JointOps_Util_GlobalMessage(JointOps_Util_CreateLocString("Base has been infiltrated by allies!"), 2)
+		sg_unit = SGroup_CreateIfNotFound("sg_unit3")
+		SGroup_SetPlayerOwner(sg_unit, ALLIES)
+		Modify_ReceivedSuppression(sg_unit, 0)
+		Cmd_Attack(sg_unit, sg_captain)
+		UI_CreateMinimapBlip(sg_unit, 5, BT_CombatPing)
+	elseif status_infiltrate == 37 then
+		sg_unit = SGroup_CreateIfNotFound("sg_unit5")
+		SGroup_SetPlayerOwner(sg_unit, ALLIES)
+		Modify_ReceivedSuppression(sg_unit, 0)
+		Cmd_Attack(sg_unit, sg_captain)
+		UI_CreateMinimapBlip(sg_unit, 5, BT_CombatPing)
+		JointOps_Util_GlobalMessage(JointOps_Util_CreateLocString("They are heading towards the u-boat! stop them now!"), 2)
+	elseif status_infiltrate == 39 then
+		UI_CreateMinimapBlip(sg_unit, 5, BT_CombatPing)
+		sg_unit = SGroup_CreateIfNotFound("sg_unit4")
+		Sound_Play2D(SOUNDS.ENEMYINBASE)
+		SGroup_SetPlayerOwner(sg_unit, ALLIES)
+		Modify_ReceivedSuppression(sg_unit, 0)
+		Cmd_Attack(sg_unit, sg_captain)
+		UI_CreateMinimapBlip(sg_unit, 5, BT_CombatPing)
+	elseif status_infiltrate > 60 then
+		-- Start event manager
+		maptime = 1
+		EventManager()
+		Rule_AddInterval(EventManager, 60)
+		
+		Rule_RemoveMe()
+	end
+	
+	status_infiltrate = status_infiltrate + 1
+end
+
+function Mission_PlayIntro()
+	if state_intro == nil then
+		state_intro = 0
+		FOW_RevealAll()
+		FOW_SetOutsideIntensity(0)
+		Game_Letterbox(true, 0)
+		Game_FadeToBlack(true, 0)
+		
+		Rule_AddInterval(Mission_PlayIntro, 1)
+	elseif state_intro == 1 then
+		nis_load("mp/classic/jointops/das_boot/jointops_das_boot_n00")
+		nis_playambient("mp/classic/jointops/das_boot/jointops_das_boot_n00")
+	elseif state_intro == 2 then
+		Sound_SetVolume("Music", 2, 0)
+		Sound_PlayMusic("Music/dasboot_intro.bsc", 3, 0)
+	elseif state_intro == 3 then
+		Game_FadeToBlack(false, 3)
+	elseif state_intro == 10 then
+		JointOps_Util_GlobalMessage(JointOps_Util_CreateLocString("U-96 is in a critical condition and has arrived for repairs"), 3)
+	elseif state_intro == 15 then
+		Game_FadeToBlack(true, 3)
+		
+		sg_intromg = SGroup_CreateIfNotFound("sg_intromg")
+		Util_CreateSquadsAtMarker(AXIS, sg_intromg, SBP.AXIS.HEAVYMG, eg_checkpoint, 1)
+		
+		sg_introgren = SGroup_CreateIfNotFound("sg_introgren")
+		Util_CreateSquadsAtMarker(AXIS, sg_introgren, SBP.AXIS.GRENADIER, mkr_wp44, 1)
+		Cmd_Move(sg_introgren, mkr_hq2, true)
+	elseif state_intro == 19 then
+		nis_stop()
+		
+		Camera_SetZoomDist(25)
+		Camera_SetDeclination(0.538)
+		Camera_MoveToPosition(mkr_introcaptain)
+		Game_FadeToBlack(false, 1)
+		SGroup_SetMoodMode(sg_captain, MM_ForceCalm)
+		Entity_SetAnimatorState(Squad_EntityAt(SGroup_GetSpawnedSquadAt(sg_plane, 1), 0), "taxi", "on")
+		Entity_SetAnimatorAction(Squad_EntityAt(SGroup_GetSpawnedSquadAt(sg_plane, 1), 0), "act_sfx_taxi_2")
+	elseif state_intro == 20 then
+		sg_introcrew = SGroup_CreateIfNotFound("sg_introcrew")
+		Util_CreateSquadsAtMarker(AXIS, sg_introcrew, BP_GetSquadBlueprint("sbps/races/axis/soldiers/repaircrew.lua"), mkr_planecrew1, 1)
+		Util_CreateSquadsAtMarker(AXIS, sg_introcrew, BP_GetSquadBlueprint("sbps/races/axis/soldiers/repaircrew.lua"), mkr_planecrew2, 1)
+		Util_CreateSquadsAtMarker(AXIS, sg_introcrew, BP_GetSquadBlueprint("sbps/races/axis/soldiers/repaircrew.lua"), mkr_planecrew3, 1)
+		Cmd_Move(sg_introcrew, mkr_wp5)
+	elseif state_intro == 21 then
+		JointOps_Util_GlobalMessage(JointOps_Util_CreateLocString("Kriegsmarine has sent experts to perform the repairs"), 5)
+	elseif state_intro == 23 then
+		Cmd_Move(sg_captain, mkr_wp5)
+	elseif state_intro == 27 then
+		Game_FadeToBlack(true, 3)
+		
+		sg_spy = SGroup_CreateIfNotFound("sg_spy")
+		Util_CreateSquadsAtMarker(AXIS, sg_spy, SBP.AXIS.SNIPER, mkr_c14, 1)
+		SGroup_DisableCombatPlans(sg_spy)
+		SGroup_EnableAttention(sg_spy, false)
+		SGroup_EnableUIDecorator(sg_spy, false)
+		Modify_Vulnerability(sg_spy, 3)
+		SGroup_SetAutoTargetting(sg_spy, "hardpoint_01", false)
+		Entity_SetAnimatorState(Squad_EntityAt(SGroup_GetSpawnedSquadAt(sg_spy, 1), 0), "demolitions_state", "placed")
+		
+		sg_introharbor = SGroup_CreateIfNotFound("sg_introharbor")
+		Util_CreateSquadsAtMarker(AXIS, sg_introharbor, SBP.ELITE.PANZERGRENADIER, mkr_subguards, 1)
+		SGroup_SetMoodMode(sg_introharbor, MM_ForceCalm)
+	elseif state_intro == 30 then
+		SGroup_DestroyAllSquads(sg_introcrew)
+		SGroup_DestroyAllSquads(sg_introgren)
+		SGroup_DestroyAllSquads(sg_plane)
+		nis_stop()
+		Camera_MoveToPosition(mkr_c11)
+		SGroup_WarpToPos(sg_captain, Util_GetPosition(mkr_c11))
+		Game_FadeToBlack(false, 1)
+	elseif state_intro == 31 then
+		JointOps_Util_GlobalMessage(JointOps_Util_CreateLocString("Protect the repair crew while they work on the U-96"), 4)
+	elseif state_intro == 38 then
+		JointOps_Util_GlobalMessage(JointOps_Util_CreateLocString("Do not let the Allies capture the u-boat"), 4)
+	elseif state_intro == 45 then
+		Game_FadeToBlack(true, 2)
+		Sound_StopMusic(4, 0)
+	elseif state_intro == 47 then
+		FOW_UnRevealAll()
+		Camera_ResetToDefault()
+		Camera_MoveToPosition(Player_GetStartingPosition(Game_GetLocalPlayer()))
+		Game_FadeToBlack(false, 2)
+		sg_unit = SGroup_CreateIfNotFound("sg_unit8")
+		Cmd_Move(sg_unit, mkr_c14)
+	elseif state_intro == 49 then
+		Game_Letterbox(false, 1)
+		Sound_PlayMusic("Music/genericmissionmusic_legacy.bsc", 0, 0)
+		FOW_SetOutsideIntensity(255)
+	elseif state_intro == 55 then
+		SGroup_SetPlayerOwner(sg_spy, ALLIES)
+		JointOps_Util_GlobalMessage(JointOps_Util_CreateLocString("Enemy spy has reported our u-boat location to nearby troops!"), 4)
+		UI_CreateMinimapBlip(sg_spy, 10, BT_AttackHerePing)
+		Sound_Play2D(SOUNDS.SPYRADIO)
+		
+		Mission_InfiltrateBase()
+		Rule_AddInterval(Mission_RandomArty, 15)
+		Rule_RemoveMe()
+	end
+	
+	state_intro = state_intro + 1
+end
+
+function Mission_PlayOutro()
+	if state_outro == nil then
+		Rule_RemoveAll()
+		for i = 1, World_GetPlayerCount() do
+			local sg_all = SGroup_CreateIfNotFound("sg_all" .. i)
+			local eg_all = EGroup_CreateIfNotFound("sg_all" .. i)
+			Player_GetAll(World_GetPlayerAt(i), sg_all, eg_all)
+			SGroup_DeSpawn(sg_all, true)
+		end
+		
+		state_outro = 0
+		FOW_RevealAll()
+		FOW_SetOutsideIntensity(0)
+		Game_Letterbox(true, 0)
+		Game_FadeToBlack(true, 0)
+		
+		Rule_AddInterval(Mission_PlayOutro, 1)
+		Sound_SetVolume("Music", 2, 0)
+		Sound_PlayMusic("Music/dasboot_outro.bsc", 3, 0)
+	elseif state_outro == 1 then
+		nis_load("mp/classic/jointops/das_boot/jointops_das_boot_n01")
+		nis_play("mp/classic/jointops/das_boot/jointops_das_boot_n01")
+	elseif state_outro == 3 then
+		Game_FadeToBlack(false, 3)
+	elseif state_outro == 7 then
+		Cmd_Ability(ALLIES, ABILITY.SP.SINGLE_HOWITZER, mkr_o4)
+	elseif state_outro == 9 then
+		Cmd_Ability(ALLIES, ABILITY.SP.SINGLE_HOWITZER, mkr_o5)
+	elseif state_outro == 13 then
+		Cmd_Ability(ALLIES, ABILITY.SP.SINGLE_HOWITZER, mkr_o6)
+	elseif state_outro == 17 then
+		Cmd_Ability(ALLIES, ABILITY.SP.SINGLE_HOWITZER, mkr_o7)
+		
+		local time = World_GetGameTime()
+		local minutes = math.floor(time / 60)
+		if SKIRMISH then JointOps_Util_GlobalMessage(JointOps_Util_CreateLocString("U-96 repaired in " .. minutes .. " minutes. (Skirmish)"), 10)
+		else JointOps_Util_GlobalMessage(JointOps_Util_CreateLocString("U-96 repaired in " .. minutes .. " minutes. (Multiplayer"), 10) end
+	elseif state_outro == 20 then
+		Cmd_Ability(ALLIES, ABILITY.SP.SINGLE_HOWITZER, mkr_beach1)
+	elseif state_outro == 23 then
+		Cmd_Ability(ALLIES, ABILITY.SP.SINGLE_HOWITZER, mkr_o8)
+	elseif state_outro == 30 then
+		Game_FadeToBlack(true, 3)
+	elseif state_outro == 33 then
+		nis_stop()
+		Camera_ResetToDefault()
+		Camera_AutoRotate(Player_GetStartingPosition(Game_GetLocalPlayer()), 30, 47, 5)
+	elseif state_outro == 34 then
+		Game_FadeToBlack(false, 3)
+		FOW_SetOutsideIntensity(255)
+		Game_Letterbox(false, 1)
+	elseif state_outro == 35 then
+		WINNER = Player_GetTeam(AXIS)
+		Util_EndGame()
+		Rule_RemoveMe()
+	end
+	
+	state_outro = state_outro + 1
+end
+
+function Mission_Flares()
+	local eg_flare = EGroup_CreateIfNotFound("eg_flare" .. World_GetRand(1, 5))
+	EGroup_SetAnimatorEvent(eg_flare, "flare_fire_00")
+end
+
+function Mission_SetupPlayers()
+	for i = 1, World_GetPlayerCount() do
+		local player = World_GetPlayerAt(i)
+		
+		-- Allies
+		if Player_GetRace(player) == 0 or Player_GetRace(player) == 1 then
+			Player_SetPopCapOverride(player, 500)
+			Player_SetResource(player, RT_Manpower, 100000)
+			Player_SetResource(player, RT_Munition, 100000)
+			Player_SetResource(player, RT_Fuel, 100000)
+			Modify_AbilityMaxCastRange(player, ABILITY.ALLIES.MORTAR_SMOKE, 2)
+			-- Axis
+		else			
+			if not SKIRMISH then
+				Modify_PlayerResourceRate(player, RT_Manpower, 1.3)
+				Modify_PlayerResourceRate(player, RT_Munition, 1.6)
+				Modify_PlayerResourceRate(player, RT_Fuel, 1.05)
+				Modify_PlayerResourceRate(player, RT_Action, 0.7)
+			else
+				Modify_PlayerResourceRate(player, RT_Manpower, 1.4)
+				Modify_PlayerResourceRate(player, RT_Munition, 2)
+				Modify_PlayerResourceRate(player, RT_Fuel, 1.2)
+			end
+			
+			Player_SetConstructionMenuAvailability(player, "tp_construction_axis_infantry_basic", ITEM_REMOVED)
+			
+			-- Replace kettens
+			if Player_GetRace(player) == 3 then
+				local sg_all = SGroup_CreateIfNotFound("sg_all" .. i)
+				Player_GetAll(player, sg_all)
+				SGroup_Filter(sg_all, {SBP.ELITE.KETTENRAD, SBP.ELITE.SCHWIMMWAGEN}, FILTER_KEEP)
+				local spos = Util_GetPosition(sg_all)
+				SGroup_DestroyAllSquads(sg_all)
+				Util_CreateSquadsAtMarker(player, sg_all, SBP.ELITE.PANZERGRENADIER, spos, 1)
+			end
+		end
+	end
+	
+	-- Setup the NPC names
+	Setup_SetPlayerName(AXIS, JointOps_Util_CreateLocString("Axis 206th Infantry Division"))
+	Setup_SetPlayerName(ALLIES, JointOps_Util_CreateLocString("Allied 341st Infantry Division"))
+end
+
+function Mission_RandomArty()
+	local target = Util_GetPosition(mkr_arty1)
+	target.x = target.x + World_GetRand(-130, 130)
+	target.z = target.z + World_GetRand(-130, 130)
+	Cmd_Ability(ALLIES, ABILITY.SP.SINGLE_HOWITZER, target)
+end
+
+function Mission_OnPickupSupplies()
+	if state_pickup == nil then
+		state_pickup = 1
+		Rule_AddInterval(Mission_OnPickupSupplies, 3)
+	elseif state_pickup == 1 then
+		JointOps_AddEvent(525)
+		
+		UI_DeleteMinimapBlip(drop_blip)
+		Objective_Fail(OBJECTIVE_EQUIPMENT, false)
+		Rule_Remove(ObjectiveCheck_Equipment)
+		
+		Sound_Play2D(SOUNDS.RADIOMSG)
+		JointOps_Util_GlobalMessage(JointOps_Util_CreateLocString("Equipment drop retrieved\nRepairs back on schedule"), 10)
+		uboat_eta = uboat_eta - 19
+		ObjectiveCheck_Uboat()
+		
+		Rule_RemoveMe()
+	end
+end
+
+function Mission_HarborAttack_Paratroopers()
+	if state_harborparadrop == nil then
+		state_harborparadrop = 1
+		Rule_AddInterval(Mission_HarborAttack_Paratroopers, 1)
+		
+		local parasbp = {SBP.CW.COMMANDOS_PARATROOPER_SP, SBP.ALLIES.PARATROOPER}
+		local parapos = {mkr_crewthreat, mkr_boat_land2, mkr_o1, mkr_repairx, mkr_wp3, mkr_c13, mkr_c14}
+		
+		sg_harborpara1 = SGroup_CreateIfNotFound("sg_harborpara1")
+		Util_Paradrop(ALLIES, sg_harborpara1, parasbp[World_GetRand(1, table.getn(parasbp))], parapos[World_GetRand(1, table.getn(parapos))], 1)
+		Util_Paradrop(ALLIES, sg_harborpara1, parasbp[World_GetRand(1, table.getn(parasbp))], parapos[World_GetRand(1, table.getn(parapos))], 1)
+	elseif state_harborparadrop > 22 then
+		Cmd_AttackMove(sg_harborpara1, mkr_crewthreat)
+		
+		state_harborparadrop = nil
+		Rule_RemoveMe()
+		return
+	end
+	
+	state_harborparadrop = state_harborparadrop + 1
+end
+
+function Mission_HarborAttack_Convoy()
+	if state_harborconvoy == nil then
+		state_harborconvoy = 1
+		Rule_AddInterval(Mission_HarborAttack_Convoy, 3)
+		
+		sg_harborconvoy1 = SGroup_CreateIfNotFound("sg_harborconvoy1")
+		sg_harborconvoy1_troops = SGroup_CreateIfNotFound("sg_harborconvoy1_troops")
+		
+		Util_CreateSquadsAtMarker(ALLIES, sg_harborconvoy1, SBP.CW.BREN_CARRIER, mkr_entry3, 1)
+		Util_SpawnInfantry(sg_harborconvoy1_troops, sg_harborconvoy1, DIF_CW_SBP_INF[World_GetRand(1, table.getn(DIF_CW_SBP_INF))])
+		Cmd_Ungarrison(sg_harborconvoy1, mkr_repairx)
+	elseif state_harborconvoy == 2 then
+		sg_harborconvoy2 = SGroup_CreateIfNotFound("sg_harborconvoy2")
+		sg_harborconvoy2_troops = SGroup_CreateIfNotFound("sg_harborconvoy2_troops")
+		
+		Util_CreateSquadsAtMarker(ALLIES, sg_harborconvoy2, SBP.CW.BREN_CARRIER, mkr_entry2, 1)
+		Util_SpawnInfantry(sg_harborconvoy2_troops, sg_harborconvoy2, DIF_CW_SBP_INF[World_GetRand(1, table.getn(DIF_CW_SBP_INF))])
+		Cmd_Ungarrison(sg_harborconvoy2, mkr_subguards)
+		
+		state_harborconvoy = nil
+		Rule_RemoveMe()
+		return
+	end
+	
+	state_harborconvoy = state_harborconvoy + 1
+end
+
+function Mission_DirectArty()
+	for i = 1, World_GetPlayerCount() do
+		if Player_GetRace(World_GetPlayerAt(i)) == 3 then
+			local sg_harborarty = SGroup_CreateIfNotFound("sg_harborarty")
+			SGroup_Clear(sg_harborarty)
+			Player_GetAll(World_GetPlayerAt(i), sg_harborarty)
+			SGroup_Filter(sg_harborarty, {SBP.ELITE.FLAK_38, SBP.ELITE.FLAK_38_CAPTURED}, FILTER_KEEP)
+			
+			if not SGroup_IsEmpty(sg_harborarty) then
+				Cmd_Ability(ALLIES, ABILITY.COMMANDER_TREE.CW.REAL_ARTILLERY, SGroup_GetRandomSpawnedSquad(sg_harborarty), nil, true)
+			end
+		end
+	end
+end
+
+function Mission_HarborAttack_Boats()
+	if state_harborboats == nil then
+		state_harborboats = 1
+		Rule_AddInterval(Mission_HarborAttack_Boats, 3)
+		
+		eg_raft1 = EGroup_CreateIfNotFound("eg_raft1")
+		sg_raft1 = SGroup_CreateIfNotFound("sg_raft1")
+		EGroup_Kill(eg_raft1)
+		Util_SpawnRaft(ALLIES, eg_raft1, sg_raft1, SBP.CW.COMMANDOS, mkr_boat1, mkr_boat_land1)
+		Cmd_Upgrade(sg_raft1, UPG.ALLIES.RIFLEMEN_AT, World_GetRand(1, 2), true)
+		
+		eg_raft2 = EGroup_CreateIfNotFound("eg_raft2")
+		sg_raft2 = SGroup_CreateIfNotFound("sg_raft2")
+		EGroup_Kill(eg_raft2)
+		Util_SpawnRaft(ALLIES, eg_raft2, sg_raft2, SBP.CW.COMMANDOS, mkr_boat2, mkr_boat_land2)
+		Cmd_Upgrade(sg_raft2, UPG.ALLIES.RIFLEMEN_AT, World_GetRand(1, 2), true)
+	elseif state_harborboats == 9 then
+		Cmd_AttackMove(sg_raft1, mkr_crewthreat, true)
+		Cmd_AttackMove(sg_raft2, mkr_crewthreat, true)
+		
+		state_harborboats = nil
+		Rule_RemoveMe()
+		return
+	end
+	
+	state_harborboats = state_harborboats + 1
+end
+
+function Mission_BreachForest()
+	if status_tanktraps == nil then
+		sg_mineteam = SGroup_CreateIfNotFound("sg_mineteam")
+		SGroup_Clear(sg_mineteam)
+		Util_CreateSquadsAtMarker(ALLIES, sg_mineteam, SBP.ALLIES.SHERMAN, mkr_entry6, 1)
+		Cmd_InstantUpgrade(sg_mineteam, UPG.ALLIES.SHERMAN_CRAB, 1)
+		Cmd_Move(sg_mineteam, mkr_u1)
+		
+		sg_demoteam = SGroup_CreateIfNotFound("sg_demoteam")
+		SGroup_Clear(sg_demoteam)
+		Util_CreateSquadsAtMarker(ALLIES, sg_demoteam, SBP.CW.COMMANDOS, mkr_entry6, 1)
+		SGroup_SetSuppression(sg_demoteam, 0)
+		SGroup_SetInvulnerable(sg_demoteam, 0.2)
+		
+		Cmd_Move(sg_demoteam, mkr_u2)
+		Cmd_SetDemolitions(sg_demoteam, eg_traps1, true, true)
+		
+		status_tanktraps = 1
+		Rule_RemoveMe()
+		Rule_AddInterval(Mission_BreachForest, 1)
+	elseif status_tanktraps == 1 and SGroup_IsSettingDemolitions(sg_demoteam, ANY) then
+		JointOps_AddEvent(530)
+		
+		FOW_RevealMarker(mkr_traps1, 30)
+		UI_CreateMinimapBlip(sg_demoteam, 20, BT_AttackHerePing)
+		Sound_Play2D(SOUNDS.RADIOMSG)
+		JointOps_Util_GlobalMessage(JointOps_Util_CreateLocString("The enemy is breaching through the forest!"), 10)
+		
+		Cmd_Ability(sg_mineteam, ABILITY_CRAB)
+		status_tanktraps = 2
+	elseif status_tanktraps == 2 and not SGroup_IsSettingDemolitions(sg_demoteam, ANY) and not SGroup_IsMoving(sg_demoteam, ALL) then
+		UI_CreateMinimapBlip(sg_demoteam, 10, BT_AttackHerePing)
+		SGroup_SetInvulnerable(sg_demoteam, true)
+		Util_CreateEntities(ALLIES, eg_traps1, EBP.CW.DEMOLITION_CHARGE, mkr_traps1, 1)
+		Cmd_DetonateDemolitions(ALLIES, eg_traps1)
+		SGroup_SetInvulnerable(sg_demoteam, false)
+		
+		upper_traps_done = true
+		
+		-- New routes
+		table.insert(ATTACK_ROUTES.INFANTRY, {mkr_entry6,mkr_wp72,mkr_wp8,mkr_wp7,mkr_wp1,mkr_crewthreat})
+		table.insert(ATTACK_ROUTES.INFANTRY, {mkr_entry6,mkr_wp72,mkr_wp9,mkr_wp11,mkr_c16,mkr_wp1,mkr_crewthreat})
+		table.insert(ATTACK_ROUTES.ARMOR, {mkr_entry6,mkr_wp72,mkr_wp7,mkr_wp13})
+		table.insert(ATTACK_ROUTES.ARMOR, {mkr_entry6, mkr_wp72, mkr_wp74, mkr_wp10, mkr_wp44})
+		
+		Cmd_AttackMove(sg_mineteam, mkr_hq1, true)
+		Cmd_AttackMove(sg_demoteam, mkr_hq1, true)
+		status_tanktraps = 3
+	elseif upper_traps_done then
+		status_tanktraps = status_tanktraps + 1
+		
+		if status_tanktraps > 15 then
+			Cmd_Ability(sg_mineteam, ABILITY_CRAB)
+			status_tanktraps = nil
+			Rule_RemoveMe()
+		end
+	end
+end
+
+function Mission_BreachAirfield()
+	if status_tanktraps == nil then
+		sg_mineteam = SGroup_CreateIfNotFound("sg_mineteam")
+		SGroup_Clear(sg_mineteam)
+		Util_CreateSquadsAtMarker(ALLIES, sg_mineteam, SBP.ALLIES.SHERMAN, mkr_entry3, 1)
+		Cmd_InstantUpgrade(sg_mineteam, UPG.ALLIES.SHERMAN_CRAB, 1)
+		Cmd_Move(sg_mineteam, mkr_f1)
+		
+		sg_demoteam = SGroup_CreateIfNotFound("sg_demoteam")
+		SGroup_Clear(sg_demoteam)
+		Util_CreateSquadsAtMarker(ALLIES, sg_demoteam, SBP.CW.COMMANDOS, mkr_entry3, 1)
+		SGroup_SetSuppression(sg_demoteam, 0)
+		SGroup_SetInvulnerable(sg_demoteam, 0.2)
+		
+		Cmd_Move(sg_demoteam, mkr_f2)
+		Cmd_SetDemolitions(sg_demoteam, eg_traps2, true, true)
+		
+		status_tanktraps = 1
+		Rule_RemoveMe()
+		Rule_AddInterval(Mission_BreachAirfield, 1)
+	elseif status_tanktraps == 1 and SGroup_IsSettingDemolitions(sg_demoteam, ANY) then
+		JointOps_AddEvent(531)
+		
+		FOW_RevealMarker(mkr_traps2, 30)
+		UI_CreateMinimapBlip(sg_demoteam, 20, BT_AttackHerePing)
+		Sound_Play2D(SOUNDS.RADIOMSG)
+		JointOps_Util_GlobalMessage(JointOps_Util_CreateLocString("The enemy is breaching to the airfield!"), 10)
+		
+		Cmd_Ability(sg_mineteam, ABILITY_CRAB)
+		status_tanktraps = 2
+	elseif status_tanktraps == 2 and not SGroup_IsSettingDemolitions(sg_demoteam, ANY) and not SGroup_IsMoving(sg_demoteam, ALL) then
+		UI_CreateMinimapBlip(sg_demoteam, 10, BT_AttackHerePing)
+		SGroup_SetInvulnerable(sg_demoteam, true)
+		Util_CreateEntities(ALLIES, eg_traps2, EBP.CW.DEMOLITION_CHARGE, mkr_traps2, 1)
+		Cmd_DetonateDemolitions(ALLIES, eg_traps2)
+		SGroup_SetInvulnerable(sg_demoteam, false)
+		
+		lower_traps_done = true
+		
+		-- New routes
+		table.insert(ATTACK_ROUTES.INFANTRY, {mkr_entry3,mkr_wp35,mkr_wp39,mkr_wp49,mkr_c15,mkr_c14,mkr_crewthreat})
+		table.insert(ATTACK_ROUTES.INFANTRY, {mkr_entry3,mkr_wp34,mkr_wp40,mkr_wp44,mkr_wp13,mkr_c16,mkr_c15,mkr_c14,mkr_crewthreat})
+		table.insert(ATTACK_ROUTES.INFANTRY, {mkr_entry3,mkr_wp71,mkr_wp38,mkr_wp41,mkr_wp51,mkr_wp1,mkr_crewthreat})
+		table.insert(ATTACK_ROUTES.ARMOR, {mkr_entry3,mkr_wp35,mkr_wp39,mkr_wp49,mkr_wp50})
+		table.insert(ATTACK_ROUTES.ARMOR, {mkr_entry3, mkr_wp34, mkr_wp40, mkr_wp44, mkr_wp15})
+		
+		Cmd_AttackMove(sg_mineteam, mkr_hq2, true)
+		Cmd_AttackMove(sg_demoteam, mkr_hq2, true)
+		status_tanktraps = 3
+	elseif lower_traps_done then
+		status_tanktraps = status_tanktraps + 1
+		
+		if status_tanktraps > 15 then
+			Cmd_Ability(sg_mineteam, ABILITY_CRAB)
+			status_tanktraps = nil
+			Rule_RemoveMe()
+		end
+	end
+end
+
+-------------------------------------------------------------------------------
+-- OBJECTIVES -----------------------------------------------------------------
+-------------------------------------------------------------------------------
+
+function ObjectiveStart_Captain()
+	sg_captain = SGroup_CreateIfNotFound("sg_captain")
+	Util_CreateSquadsAtMarker(AXIS, sg_captain, BP_GetSquadBlueprint("sbps/races/axis/soldiers/subcaptain.lua"), mkr_introcaptain, 1)
+	Modify_ReceivedSuppression(sg_captain, 0)
+	Modify_Vulnerability(sg_captain, 0.8)
+	Modify_TargetPriority(sg_captain, 100)
+	Modify_WeaponDamage(sg_captain, "hardpoint_01", 2)
+	SGroup_SetMoodMode(sg_captain, MM_ForceCalm)
+end
+
+function ObjectiveStart_Capture()
+	OBJECTIVE_CAPTURE =
+	{
+		SetupUI = function()
+		end,
+		
+		OnStart = function()
+			Rule_AddInterval(ObjectiveCheck_Capture, 5)
+			Objective_StartTimer(OBJECTIVE_CAPTURE, COUNT_DOWN, SUB_CAPTURE_MINUTES * 60)
+		end,
+		
+		OnComplete = function()
+		end,
+		
+		IsComplete = function()
+			return false
+		end,
+		
+		OnFail = function()
+		end,
+		
+		Title = locstr_uboat_capture,
+		Description = locstr_uboat_capture,
+		DisplayTitleStart = locstr_uboat_capture,
+		
+		Icon = IT_P_Defend,
+		Type = OT_Primary,
+	}
+	
+	Objective_Register(OBJECTIVE_CAPTURE)
+	Objective_Start(OBJECTIVE_CAPTURE, false)
+end
+
+function ObjectiveCheck_Capture()
+	if Objective_GetTimerSeconds(OBJECTIVE_CAPTURE) < 1 then
+		JointOps_AddEvent(553)
+		
+		Objective_Fail(OBJECTIVE_UBOAT)
+		Rule_RemoveMe()
+		
+		Camera_AutoRotate(Util_GetPosition(mkr_crewthreat), 35, 42, 5)
+		Rule_AddOneShot(Util_EndGame, 10)
+		WINNER = Player_GetTeam(ALLIES)
+	end
+end
+
+function ObjectiveStart_RepairCrew()
+	locstr_delayed = JointOps_Util_CreateLocString("The U-96 is getting captured!")
+	
+	sg_repaircrew = SGroup_CreateIfNotFound("sg_repaircrew")
+	Util_CreateSquadsAtMarker(AXIS, sg_repaircrew, BP_GetSquadBlueprint("sbps/races/axis/soldiers/repaircrew.lua"), mkr_repair1, 1)
+	Util_CreateSquadsAtMarker(AXIS, sg_repaircrew, BP_GetSquadBlueprint("sbps/races/axis/soldiers/repaircrew.lua"), mkr_repair2, 1)
+	Util_CreateSquadsAtMarker(AXIS, sg_repaircrew, BP_GetSquadBlueprint("sbps/races/axis/soldiers/repaircrew.lua"), mkr_repair3, 1)
+	Util_CreateSquadsAtMarker(AXIS, sg_repaircrew, BP_GetSquadBlueprint("sbps/races/axis/soldiers/repaircrew.lua"), mkr_hull_pio, 1)
+	
+	SGroup_SetMoodMode(sg_repaircrew, MM_ForceCalm)
+	SGroup_DisableCombatPlans(sg_repaircrew)
+	SGroup_SetInvulnerable(sg_repaircrew, true)
+	SGroup_EnableAttention(sg_repaircrew, false)
+	SGroup_EnableUIDecorator(sg_repaircrew, false)
+	for i = 1, 4 do Entity_SetAnimatorState(Squad_EntityAt(SGroup_GetSpawnedSquadAt(sg_repaircrew, i), 0), "blowtorch_state", "active") end
+	
+	status_repaircrew = 1
+	repaircrew_safe = true
+	Rule_AddInterval(ObjectiveCheck_RepairCrew, 10)
+end
+
+function ObjectiveCheck_RepairCrew()
+	local sg_enemies = SGroup_CreateIfNotFound("sg_enemies")
+	SGroup_Clear(sg_enemies)
+	Player_GetAllSquadsNearMarker(ALLIES, sg_enemies, Util_GetPosition(mkr_crewthreat), 15)
+	
+	if repaircrew_safe and not SGroup_IsEmpty(sg_enemies) then
+		ObjectiveStart_Capture()
+		Objective_Show(OBJECTIVE_UBOAT, false)
+		
+		status_repaircrew = 5
+		repaircrew_safe = false
+		for i = 1, 3 do
+			Entity_SetAnimatorState(Squad_EntityAt(SGroup_GetSpawnedSquadAt(sg_repaircrew, i), 0), "blowtorch_state", "inactive")
+			Squad_FacePosition(SGroup_GetSpawnedSquadAt(sg_repaircrew, i), Util_GetPosition(mkr_repairx))
+		end
+	elseif not repaircrew_safe and SGroup_IsEmpty(sg_enemies) then
+		Rule_Remove(ObjectiveCheck_Capture)
+		Objective_Complete(OBJECTIVE_CAPTURE, false)
+		Objective_Show(OBJECTIVE_UBOAT, true)
+		
+		repaircrew_safe = true
+		for i = 1, 3 do
+			Entity_SetAnimatorState(Squad_EntityAt(SGroup_GetSpawnedSquadAt(sg_repaircrew, i), 0), "blowtorch_state", "active")
+			
+			local facing = Util_GetPosition(Marker_FromName("mkr_repair"..i, "magenta_marker"))
+			local dir = Marker_GetDirection(Marker_FromName("mkr_repair"..i, "magenta_marker"))
+			facing.x = facing.x + (dir.x * 100)
+			facing.y = facing.y + (dir.y * 100)
+			facing.z = facing.z + (dir.z * 100)
+			Squad_FacePosition(SGroup_GetSpawnedSquadAt(sg_repaircrew, i), facing)
+		end
+	end
+	
+	if not repaircrew_safe and status_repaircrew % 5 == 0 then
+		uboat_eta = uboat_eta + 1
+		UI_CreateMinimapBlip(mkr_uboat, 5, BT_AttackHerePing)
+		Sound_Play2D(SOUNDS.SUBALERT)
+		JointOps_Util_GlobalMessage(locstr_delayed, 5)
+		Objective_UpdateText(OBJECTIVE_UBOAT, JointOps_Util_CreateLocString("U-96 repairs complete in " .. uboat_eta .. " minutes"), nil, false)
+	end
+	
+	status_repaircrew = status_repaircrew + 1
+end
+
+function ObjectiveStart_Uboat()
+	uboat_eta = 35
+	local locstr_uboat = JointOps_Util_CreateLocString("U-96 repairs complete in " .. uboat_eta .. " minutes")
+	
+	OBJECTIVE_UBOAT =
+	{
+		SetupUI = function()
+		end,
+		
+		OnStart = function()
+			Rule_AddInterval(ObjectiveCheck_Uboat, 60)
+		end,
+		
+		OnComplete = function()
+		end,
+		
+		IsComplete = function()
+			return false
+		end,
+		
+		OnFail = function()
+		end,
+		
+		Title = locstr_uboat,
+		Description = locstr_uboat,
+		DisplayTitleStart = locstr_uboat,
+		
+		Icon = IT_P_Defend,
+		Type = OT_Primary,
+	}
+	
+	Objective_Register(OBJECTIVE_UBOAT)
+	Objective_Start(OBJECTIVE_UBOAT, false)
+end
+
+function ObjectiveCheck_Uboat()
+	if repaircrew_safe then
+		uboat_eta = uboat_eta - 1
+	else
+		return
+	end
+	
+	if uboat_eta < 1 then
+		JointOps_AddEvent(550)
+		
+		Objective_Complete(OBJECTIVE_UBOAT, false)
+		Rule_RemoveMe()
+		Mission_PlayOutro()
+	else
+		Objective_UpdateText(OBJECTIVE_UBOAT, JointOps_Util_CreateLocString("U-96 repairs complete in " .. uboat_eta .. " minutes"), nil, false)
+	end
+end
+
+function ObjectiveStart_Equipment()
+	locstr_equipment_singal = JointOps_Util_CreateLocString("The enemy is blocking our\ncommunications with something...")
+	locstr_equipment_tower = JointOps_Util_CreateLocString("Use the south control tower to contact HQ")
+	locstr_equipment_part1 = JointOps_Util_CreateLocString("Call in an equipment drop")
+	locstr_equipment_part2 = JointOps_Util_CreateLocString("Locate and destroy the communications disruptor")
+	locstr_equipment_part3 = JointOps_Util_CreateLocString("Retrieve the repair equipment drop")
+	
+	OBJECTIVE_EQUIPMENT =
+	{
+		SetupUI = function()
+		end,
+		
+		OnStart = function()
+			JointOps_AddEvent(520)
+			
+			Sound_Play2D(SOUNDS.SUBALERT)
+			JointOps_Util_GlobalMessage(JointOps_Util_CreateLocString("Advanced repair equipment needed!\nU-boat repairs delayed by 20 minutes."), 5)
+			JointOps_Util_GlobalMessage(locstr_equipment_tower, 5)
+			
+			uboat_eta = uboat_eta + 20
+			Objective_UpdateText(OBJECTIVE_UBOAT, JointOps_Util_CreateLocString("U-96 repairs complete in " .. uboat_eta .. " minutes"), nil, false)
+			
+			tower_blip = UI_CreateMinimapBlip(Util_GetPosition(mkr_tower), -1, BT_ObjectiveMedal)
+			state_equipment = 1
+			status_equipment = 1
+			Rule_AddInterval(ObjectiveCheck_Equipment, 15)
+			
+			local dpos = Marker_FromName("mkr_radio"..World_GetRand(1, 5), "magenta_marker")
+			eg_disruptor = EGroup_CreateIfNotFound("eg_disruptor")
+			Util_CreateEntities(ALLIES, eg_disruptor, BP_GetEntityBlueprint("ebps/environment/custom/disruptor"), dpos, 1)
+			Entity_SetAnimatorVariable(EGroup_GetSpawnedEntityAt(eg_disruptor, 1), "build", "1")
+		end,
+		
+		OnComplete = function()
+		end,
+		
+		IsComplete = function()
+			return false
+		end,
+		
+		OnFail = function()
+		end,
+		
+		Title = locstr_equipment_part1,
+		Description = locstr_equipment_part1,
+		DisplayTitleStart = locstr_equipment_part1,
+		
+		Icon = IT_P_Defend,
+		Type = OT_Medal,
+		MedalID = MEDALS.ARMY_SHARPSHOOTER_BADGE,
+	}
+	
+	Objective_Register(OBJECTIVE_EQUIPMENT)
+	Objective_Start(OBJECTIVE_EQUIPMENT, false)
+end
+
+function ObjectiveCheck_Equipment()
+	if state_equipment == 1 then
+		if Util_GetPlayerOwner(eg_radio) == player1 or Util_GetPlayerOwner(eg_radio) == player2 then
+			UI_DeleteMinimapBlip(tower_blip)
+			state_equipment = 2
+			status_equipment = 4
+			Objective_UpdateText(OBJECTIVE_EQUIPMENT, locstr_equipment_part2, nil, false)
+			ObjectiveCheck_Equipment()
+			return
+		end
+		
+		if status_equipment % 6 == 0 then
+			Sound_Play2D(SOUNDS.RADIOMSG)
+			JointOps_Util_GlobalMessage(locstr_equipment_tower, 5)
+			UI_CreateMinimapBlip(Util_GetPosition(mkr_tower), 3, BT_ObjectiveMedal)
+		end
+	elseif state_equipment == 2 then
+		if EGroup_IsEmpty(eg_disruptor) then
+			Objective_Show(OBJECTIVE_EQUIPMENT, false)
+			state_equipment = 3
+			return
+		end
+		
+		if status_equipment % 4 == 0 then
+			JointOps_Util_GlobalMessage(locstr_equipment_singal, 5)
+			Sound_Play2D(SOUNDS.RADIO)
+			for i = 1, 5 do UI_CreateMinimapBlip(Marker_FromName("mkr_radio"..i, "magenta_marker"), 10, BT_CombatPing) end
+		end
+	elseif state_equipment == 3 then
+		JointOps_AddEvent(521)
+		
+		Sound_Play2D(SOUNDS.RADIOMSG)
+		JointOps_Util_GlobalMessage(JointOps_Util_CreateLocString("HQ has been contacted and\nequipment drop is on its way"), 5)
+		status_equipment = 0
+		state_equipment = 4
+		return
+	elseif state_equipment == 4 and status_equipment > 3 then
+		Sound_Play2D(SOUNDS.FLYBY)
+		state_equipment = 5
+		return
+	elseif state_equipment == 5 then
+		drop_pos = Marker_FromName("mkr_drop"..World_GetRand(1, 5), "magenta_marker")
+		drop_blip = UI_CreateMinimapBlip(drop_pos, -1, BT_ObjectiveSecondary)
+		Cmd_Ability(AXIS, BP_GetAbilityBlueprint("abilities/custom/paradrop_repair_supplies.lua"), drop_pos, nil, true)
+		Objective_UpdateText(OBJECTIVE_EQUIPMENT, locstr_equipment_part3, nil, false)
+		Objective_Show(OBJECTIVE_EQUIPMENT, true)
+		state_equipment = 6
+		status_equipment = 6
+		return
+	elseif state_equipment == 6 then
+		if status_equipment % 6 == 0 then
+			UI_CreateMinimapBlip(drop_pos, 5, BT_ObjectiveSecondary)
+			Sound_Play2D(SOUNDS.RADIOMSG)
+			JointOps_Util_GlobalMessage(locstr_equipment_part3, 5)
+		end
+	end
+	
+	status_equipment = status_equipment + 1
+end
+
+function ObjectiveStart_Power()
+	OBJECTIVE_POWER =
+	{
+		SetupUI = function()
+		end,
+		
+		OnStart = function()
+		end,
+		
+		OnComplete = function()
+		end,
+		
+		IsComplete = function()
+			return false
+		end,
+		
+		OnFail = function()
+		end,
+		
+		Title = locstr_power_obj,
+		Description = locstr_power_obj,
+		DisplayTitleStart = locstr_power_obj,
+		
+		Icon = IT_P_Defend,
+		Type = OT_Medal,
+		MedalID = MEDALS.ARMY_SHARPSHOOTER_BADGE,
+	}
+	
+	Objective_Register(OBJECTIVE_POWER)
+	Objective_Start(OBJECTIVE_POWER, false)
+end
+
+function ObjectiveCheck_Power()
+	local damaged = 0
+	for i = 1, 5 do
+		eg_generator = EGroup_CreateIfNotFound("eg_generator"..i)
+		if EGroup_GetAvgHealth(eg_generator) < 0.6 then
+			damaged = damaged + 1
+			if power_loss and power_blips[i] == nil then
+				power_blips[i] = UI_CreateMinimapBlip(Util_GetPosition(eg_generator), -1, BT_ObjectiveMedal)
+			end
+		elseif power_blips[i] ~= nil then
+			UI_DeleteMinimapBlip(power_blips[i])
+			power_blips[i] = nil
+		end
+	end
+	
+	if not power_loss and damaged > 1 then
+		JointOps_AddEvent(540)
+		
+		ObjectiveStart_Power()
+		
+		power_loss = true
+		for i = 1, EGroup_CountAlive(eg_lights) do Entity_SetAnimatorState(EGroup_GetSpawnedEntityAt(eg_lights, i), "Light", "Off") end
+		
+		Sound_Play2D(SOUNDS.POWERDOWN)
+		JointOps_Util_GlobalMessage(locstr_power_lost, 5)
+		
+		ObjectiveCheck_Power()
+		
+		uboat_eta = uboat_eta * 2
+		Objective_UpdateText(OBJECTIVE_UBOAT, JointOps_Util_CreateLocString("U-96 repairs complete in " .. uboat_eta .. " minutes"), nil, false)
+	elseif power_loss and damaged == 0 then
+		JointOps_AddEvent(541)
+		
+		Objective_Fail(OBJECTIVE_POWER, false)
+		
+		power_loss = false
+		Sound_Play2D(SOUNDS.POWERUP)
+		Rule_AddOneShot(ObjectiveCheck_Power_PowerOn, 3)
+		
+		ObjectiveCheck_Power()
+		
+		uboat_eta = math.floor(uboat_eta / 2)
+		Objective_UpdateText(OBJECTIVE_UBOAT, JointOps_Util_CreateLocString("U-96 repairs complete in " .. uboat_eta .. " minutes"), nil, false)
+	end
+end
+
+function ObjectiveCheck_Power_PowerOn()
+	JointOps_Util_GlobalMessage(locstr_power_restored, 5)
+	for i = 1, EGroup_CountAlive(eg_lights) do Entity_SetAnimatorState(EGroup_GetSpawnedEntityAt(eg_lights, i), "Light", "On") end
+end
+
+-------------------------------------------------------------------------------
+-- MISC FUNCTIONS -------------------------------------------------------------
+-------------------------------------------------------------------------------
+
+function Util_SpawnInfantry(sgroupid, pos, squadtype)
+	if (scartype(pos) == ST_MARKER) then
+		Util_CreateSquadsAtMarker(ALLIES, sgroupid, squadtype, pos, 1)
+	elseif (scartype(pos) == ST_SGROUP) then
+		Util_CreateSquadsAndGarrison(ALLIES, sgroupid, squadtype, pos, 1)
+	end
+	
+	-- Upgrades
+	if squadtype == SBP.ALLIES.ENGINEER then
+		Cmd_Upgrade(sgroupid, UPG.ALLIES.ENGINEER_FLAMETHROWER, 1, true)
+	elseif squadtype == SBP.ALLIES.SNIPER then
+		Cmd_SquadAbility(sgroupid, ABILITY_CAMO, true)
+	elseif squadtype == SBP.ALLIES.RANGER then
+		if DIF_US_INF_THOMPSONS == true then
+			Cmd_Upgrade(sgroupid, BP_GetUpgradeBlueprint("upgrade/allies/items/allies_rifle_squad_anti_infantry_package.lua"), World_GetRand(1, 2), true)
+		end
+		if DIF_US_INF_BAZOOKAS == true then
+			Cmd_Upgrade(sgroupid, UPG.ALLIES.RIFLEMEN_AT, World_GetRand(1, 2), true)
+		end
+	elseif squadtype == SBP.CW.TOMMIES then
+		local tommyup = World_GetRand(1, 2)
+		if tommyup == 1 then
+			Cmd_Upgrade(sgroupid, UPG.CW.RECON_TEAM, 1, true)
+		else
+			Cmd_Upgrade(sgroupid, UPG.CW.RIFLE_GRENADE, 1, true)
+		end
+	end
+	
+	-- Random range bonus if enabled
+	if DIF_INF_RANGE_BONUS == true then
+		Modify_WeaponRange(sgroupid, "hardpoint_01", 1 + (World_GetRand(1, 2) / 10))
+	end
+	
+	-- Lower suppression
+	if DIF_INF_SUPPRESION_BONUS == true then
+		Modify_ReceivedSuppression(sgroupid, 0.60)
+	end
+	
+	-- Give random vet to squad
+	SGroup_IncreaseVeterancyRank(sgroupid, World_GetRand(0, DIF_INF_VET_MAX), true)
+end
+
+function Util_SpawnArmor(sgroupid, pos, squadtype)
+	Util_CreateSquadsAtMarker(ALLIES, sgroupid, squadtype, pos, 1)
+	
+	if squadtype == SBP.ALLIES.HALFTRACK then
+		Cmd_Upgrade(sgroupid, UPG.ALLIES.HALFTRACK_QUAD, 1, true)
+	elseif squadtype == SBP.ALLIES.GREYHOUND then
+		Cmd_Upgrade(sgroupid, UPG.ALLIES.GREYHOUND_MG, 1, true)
+		if World_GetRand(1, 2) == 1 then
+			Cmd_Upgrade(sgroupid, UPG.ALLIES.GREYHOUND_ARMOR, 1, true)
+		end
+	elseif squadtype == SBP.ALLIES.JEEP then
+		Modify_WeaponDamage(sgroupid, "hardpoint_01", 2)
+	elseif squadtype == SBP.CW.BREN_CARRIER then
+		Cmd_Upgrade(sgroupid, UPG.CW.BREN_CARRIER_MMG, 1, true)
+	elseif squadtype == SBP.ALLIES.SHERMAN then
+		Cmd_Upgrade(sgroupid, UPG.ALLIES.SHERMAN_MG, 1, true)
+	end
+	
+	-- Give random vet to squad
+	SGroup_IncreaseVeterancyRank(sgroupid, World_GetRand(0, DIF_ARMOR_VET_MAX), true)
+end
+
+function Util_GetRandomOffset(pos, mindist, maxdist)
+	local newpos = pos
+	newpos.x = newpos.x + World_GetRand(mindist, maxdist)
+	newpos.z = newpos.z + World_GetRand(mindist, maxdist)
+	return newpos
+end
+
+function Util_GetPosOffset(pos, xoffset, zoffset)
+	local newpos = pos
+	newpos.x = newpos.x + xoffset
+	newpos.z = newpos.z + zoffset
+	return newpos
+end
+
+function Util_EndGame()
+	World_SetTeamWin(WINNER, "annihilate")
+	World_SetGameOver()
+end

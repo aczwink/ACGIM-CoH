@@ -1,0 +1,7 @@
+atmospheres =
+{
+	{ 62009, "OUTPOST_1.aps" },
+	{ 62011, "OUTPOST_2.APS" },
+}
+
+fixed_starting_locations = true

@@ -1,0 +1,19 @@
+HeaderInfo =  
+{
+	scenarioname = "$18010028",
+	scenariodescription = "$18010029",
+	maxplayers = 4,
+	date = "02.11.2016 22:42",
+	scenarioabbrname = "",
+	savedname = "",
+	version = 2004,
+	mapsize =  
+	{
+		512,
+		256,
+	},
+	music = "",
+	scenariotype = 2,
+	modname = "ACGIM",
+}
+

@@ -1,0 +1,7 @@
+model =
+{
+	"..\\..\\Common\\CompleteMotionTree.abp",
+
+	"Weapons\\M3_GreaseGun",
+	"Officer\\Officer",
+}

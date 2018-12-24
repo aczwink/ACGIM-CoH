@@ -1,0 +1,7 @@
+AmbientAudio =  
+{
+	"specialfx/radiofuzz",
+	"specialfx/tinitus",
+	"mastereffects/reverbs/reverb_master",
+}
+
